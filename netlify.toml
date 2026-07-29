@@ -1,0 +1,4 @@
+# Configuration Netlify pour Aventures Colomb Corporate
+[build]
+  functions = "netlify/functions"
+  publish = "."

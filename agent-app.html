@@ -124,13 +124,25 @@ function showApp(){
 
 if (session) showApp();
 
-async function api(payload){
-  const res = await fetch(API_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // évite le preflight CORS avec Apps Script
-    body: JSON.stringify(payload)
-  });
-  return res.json();
+async function api(payload, attempt){
+  attempt = attempt || 1;
+  try{
+    const res = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // évite le preflight CORS avec Apps Script
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    return await res.json();
+  } catch(e){
+    // Apps Script peut être "endormi" après une inactivité : le premier appel
+    // échoue ou traîne, on retente automatiquement 1 fois avant d'abandonner.
+    if (attempt < 2){
+      await new Promise(r => setTimeout(r, 1200));
+      return api(payload, attempt + 1);
+    }
+    throw e;
+  }
 }
 
 async function doLogin(){

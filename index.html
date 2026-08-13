@@ -152,6 +152,8 @@
   .lieu-card .thumb{height:150px;background:var(--cream-dark);position:relative;overflow:hidden;}
   .lieu-card .thumb img{width:100%;height:100%;object-fit:cover;}
   .lieu-card .price-tag{position:absolute;bottom:10px;right:10px;background:rgba(14,59,80,0.85);color:#fff;font-size:12.5px;padding:4px 10px;border-radius:999px;}
+  .lire-plus{color:var(--orange, #C4432B);font-weight:600;cursor:pointer;white-space:nowrap;}
+  .lire-plus:hover{text-decoration:underline;}
   .lieu-card .body{padding:16px 18px 18px;}
   .lieu-card .body b{font-family:'Space Grotesk',sans-serif;font-size:16px;display:block;margin-bottom:6px;}
   .lieu-card .body p{font-size:13.5px;color:#4d6875;margin-bottom:14px;min-height:38px;}
@@ -356,7 +358,7 @@
    vers le Google Sheets via Apps Script, avec une copie locale immédiate
    pour que l'affichage reste instantané pendant la session.
    ============================================================ */
-const GOOGLE_SHEETS_URL = 'https://script.google.com/macros/s/AKfycbzyex74aTu3KtiBWg385u1Om80DkaJJQCvRxdwyImn-JEAx9J7RIj84VzoQ8FPC-DZv/exec';
+const GOOGLE_SHEETS_URL = 'https://script.google.com/macros/s/AKfycbytPAAXjSR2vTRHCS4T-msxxs4zikmr03I2vT0t5j6_8M-8pI7g-CONJq3W7qzSbaBQ/exec';
 
 /* Fonction Netlify qui initie le paiement CinetPay (Orange Money / mobile money)
    pour un billet. Une fois déployée, elle est accessible sur ton propre domaine
@@ -617,6 +619,28 @@ let pendingBooking = null;
 function getCatIcon(catId){ return categoryIcons[catId] || DEFAULT_CATEGORY_ICONS[catId] || null; }
 
 function fmt(n){ return n.toLocaleString('fr-FR') + ' GNF'; }
+function escapeHtml(s){ return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function renderEventDescription(desc, id){
+  if(!desc) return '';
+  const limit = 130;
+  const clean = String(desc).trim();
+  if(clean.length <= limit) return `<p>${escapeHtml(clean)}</p>`;
+  const short = escapeHtml(clean.slice(0, limit).trim());
+  const full = escapeHtml(clean);
+  return `<p id="desc-${id}" data-short="${short}" data-full="${full}" data-expanded="0">${short}… <span class="lire-plus" onclick="toggleDesc('${id}', event)">Lire plus</span></p>`;
+}
+function toggleDesc(id, e){
+  if(e) e.stopPropagation();
+  const p = document.getElementById('desc-'+id);
+  if(!p) return;
+  if(p.dataset.expanded === '1'){
+    p.innerHTML = p.dataset.short + '… <span class="lire-plus" onclick="toggleDesc(\''+id+'\', event)">Lire plus</span>';
+    p.dataset.expanded = '0';
+  } else {
+    p.innerHTML = p.dataset.full + ' <span class="lire-plus" onclick="toggleDesc(\''+id+'\', event)">Réduire</span>';
+    p.dataset.expanded = '1';
+  }
+}
 
 /* Traite une liste d'éléments par petits groupes (au lieu de tout en même temps ou un par un) :
    plus robuste sur une connexion faible et évite de surcharger Google Apps Script. */
@@ -994,7 +1018,7 @@ function renderEventsView(){
       <div class="body">
         <b>${ev.name}</b>
         <p>📅 ${dateAff}${ev.heure?' à '+ev.heure:''}${ev.lieu?' · 📍 '+ev.lieu:''}</p>
-        <p>${ev.description||''}</p>
+        ${renderEventDescription(ev.description, ev.id)}
         <p style="font-weight:600;color:${remaining>0?'var(--teal)':'#B84A3E'};">${remaining>0 ? remaining+' billet(s) restant(s)' : 'Complet'}</p>
         <button class="btn btn-primary btn-sm" ${remaining<=0?'disabled':''} onclick="openTicketModal('${ev.id}')" style="width:100%;justify-content:center;">${remaining>0?'Réserver un billet':'Complet'}</button>
       </div>
@@ -1947,7 +1971,7 @@ async function renderAdminBilletterie(){
         <div class="field"><label>Prix du billet (GNF)</label><input type="number" value="${ev.price}" id="ev-price-${ev.id}"></div>
         <div class="field"><label>Nombre total de billets</label><input type="number" value="${ev.ticketsTotal||0}" id="ev-total-${ev.id}"></div>
       </div>
-      <div class="field"><label>Description</label><textarea id="ev-desc-${ev.id}">${ev.description||''}</textarea></div>
+      <div class="field"><label>Description (visible sur le site, avec "Lire plus" si long)</label><textarea id="ev-desc-${ev.id}" placeholder="Présente l'ambiance, les artistes, ce qui rend cette soirée unique... c'est ce que les clients liront avant d'acheter.">${ev.description||''}</textarea></div>
       <p class="meta">🎟️ ${ev.ticketsSold||0} vendu(s) · ${remaining} restant(s)</p>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
         <button class="btn btn-teal btn-sm" onclick="saveEvent('${ev.id}')">Enregistrer</button>

@@ -120,6 +120,17 @@ function showApp(){
   document.getElementById('app-container').style.display = 'flex';
   document.getElementById('agentName').textContent = session.nom;
   document.getElementById('agentSite').textContent = session.site;
+  startKeepAlive();
+}
+
+let keepAliveTimer = null;
+function startKeepAlive(){
+  if (keepAliveTimer) return;
+  // Ping silencieux toutes les 4 minutes tant que l'agent est connecté,
+  // pour éviter qu'Apps Script "s'endorme" pendant les creux entre 2 clients.
+  keepAliveTimer = setInterval(() => {
+    api({ type: 'ping' }).catch(() => {});
+  }, 4 * 60 * 1000);
 }
 
 if (session) showApp();
@@ -174,6 +185,7 @@ async function doLogin(){
 function logout(){
   sessionStorage.removeItem('ac_agent_session');
   session = null;
+  if (keepAliveTimer){ clearInterval(keepAliveTimer); keepAliveTimer = null; }
   document.getElementById('app-container').style.display = 'none';
   document.getElementById('login-screen').style.display = 'flex';
 }
@@ -201,6 +213,7 @@ async function checkAndValidate(){
       card.innerHTML = `
         <div class="status">🟢 Billet validé</div>
         <h2>${r.nom} — accès autorisé</h2>
+        ${r.typeBillet?`<div class="result-row"><span>Catégorie</span><b style="color:var(--gold);">${r.typeBillet}</b></div>`:''}
         <div class="result-row"><span>Événement</span><b>${r.evenement}</b></div>
         <div class="result-row"><span>Billets</span><b>${r.quantite}</b></div>`;
       document.getElementById('codeInput').value = '';

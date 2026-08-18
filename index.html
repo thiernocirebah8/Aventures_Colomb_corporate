@@ -154,6 +154,21 @@
   .lieu-card .price-tag{position:absolute;bottom:10px;right:10px;background:rgba(14,59,80,0.85);color:#fff;font-size:12.5px;padding:4px 10px;border-radius:999px;}
   .lire-plus{color:var(--orange, #C4432B);font-weight:600;cursor:pointer;white-space:nowrap;}
   .lire-plus:hover{text-decoration:underline;}
+  .lost-ticket-box{background:var(--navy);color:#fff;border-radius:16px;padding:18px 20px;margin:0 0 18px;display:flex;flex-wrap:wrap;align-items:center;gap:14px;}
+  .lost-ticket-box .ltb-icon{font-size:22px;}
+  .lost-ticket-box .ltb-text{flex:1 1 220px;display:flex;flex-direction:column;}
+  .lost-ticket-box .ltb-text b{font-size:15px;}
+  .lost-ticket-box .ltb-text span{font-size:12.5px;color:#c3d2da;margin-top:2px;}
+  .lost-ticket-box .ltb-form{display:flex;gap:8px;flex:1 1 320px;}
+  .lost-ticket-box .ltb-form input{flex:1;padding:10px 12px;border-radius:10px;border:none;font-size:13.5px;}
+  .lost-ticket-box .ltb-form .btn-outline{border-color:rgba(255,255,255,.4);color:#fff;white-space:nowrap;}
+  .lost-ticket-box .ltb-status{flex-basis:100%;font-size:12.5px;color:#c3d2da;margin:6px 0 0;}
+  .dl-tickets-list{display:flex;flex-direction:column;gap:12px;margin-top:16px;max-height:340px;overflow-y:auto;}
+  .dl-ticket{border:1px solid var(--line);border-radius:14px;overflow:hidden;text-align:left;background:#fff;}
+  .dl-ticket img{width:100%;height:90px;object-fit:cover;display:block;}
+  .dl-ticket-body{padding:12px 14px;}
+  .dl-ticket-event{font-size:13px;color:var(--navy);font-weight:600;margin-bottom:4px;}
+  .dl-ticket-code{font-size:18px;color:var(--orange);font-weight:700;letter-spacing:2px;margin-bottom:8px;}
   .lieu-card .body{padding:16px 18px 18px;}
   .lieu-card .body b{font-family:'Space Grotesk',sans-serif;font-size:16px;display:block;margin-bottom:6px;}
   .lieu-card .body p{font-size:13.5px;color:#4d6875;margin-bottom:14px;min-height:38px;}
@@ -619,6 +634,20 @@ let pendingBooking = null;
 function getCatIcon(catId){ return categoryIcons[catId] || DEFAULT_CATEGORY_ICONS[catId] || null; }
 
 function fmt(n){ return n.toLocaleString('fr-FR') + ' GNF'; }
+// Catégories de billets (Général / VIP / VVIP...) — avec repli automatique
+// pour les événements créés avant l'ajout de cette fonctionnalité (ils
+// n'avaient qu'un seul prix/stock, traité ici comme une unique catégorie).
+function getEventTiers(ev){
+  if(ev.tiers && ev.tiers.length) return ev.tiers;
+  return [{id:'legacy', name:'Général', price:ev.price||0, total:ev.ticketsTotal||0, sold:ev.ticketsSold||0}];
+}
+function eventRemaining(ev){
+  return getEventTiers(ev).reduce((s,t)=>s+Math.max(0,(t.total||0)-(t.sold||0)),0);
+}
+function eventMinPrice(ev){
+  const tiers = getEventTiers(ev);
+  return tiers.length ? Math.min(...tiers.map(t=>t.price||0)) : 0;
+}
 function escapeHtml(s){ return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function renderEventDescription(desc, id){
   if(!desc) return '';
@@ -774,24 +803,23 @@ async function init(){
   events = [];
   goHome();
 
-  // Retour depuis le guichet de paiement CinetPay (return_url=?paiement=merci&ref=...)
+  // Retour depuis le guichet de paiement CinetPay (return_url=?paiement=merci&ref=...&tx=...)
   const params = new URLSearchParams(window.location.search);
   if(params.get('paiement') === 'merci'){
     const ref = params.get('ref') || '';
+    const tx = params.get('tx') || '';
     document.getElementById('modal-root').innerHTML = `
       <div class="overlay" onclick="if(event.target===this) closeModal()">
         <div class="modal" style="text-align:center;">
           <button class="close" onclick="closeModal()">✕</button>
-          <div class="success-icon">✓</div>
-          <h3>Paiement en cours de confirmation</h3>
+          <div class="success-icon">⏳</div>
+          <h3>Confirmation du paiement…</h3>
           <p class="sub">Référence : <b class="mono" style="color:var(--navy);">${ref}</b></p>
-          <p class="sub">Ton code d'entrée arrive par email dans les prochaines minutes dès que le paiement est confirmé. Si tu ne le reçois pas rapidement, contacte-nous sur WhatsApp avec ta référence.</p>
-          <div class="send-options">
-            <button class="btn btn-outline" onclick="closeModal(); goHome();">Retour à l'accueil</button>
-          </div>
+          <p class="sub" id="poll-status">Quelques secondes, on récupère ton billet.</p>
         </div>
       </div>`;
     history.replaceState({}, '', window.location.pathname);
+    if(tx) pollForTickets(tx, ref); else document.getElementById('poll-status').textContent = 'Ton code d\'entrée arrive par email dans les prochaines minutes.';
   }
 
   // 2) Ensuite seulement, on va chercher les vraies infos (celles modifiées dans
@@ -816,6 +844,29 @@ async function init(){
 
   Object.assign(categoryIcons, savedCatIcons || {});
   Object.assign(whyIcons, savedWhyIcons || {});
+
+  // Lien de partage direct vers un événement (?evenement=ID) — ouvre la
+  // billetterie et le billet correspondant directement, sans que la
+  // personne ait besoin de le chercher elle-même.
+  const eventIdParam = params.get('evenement');
+  if(eventIdParam && params.get('paiement') !== 'merci'){
+    const sharedEv = events.find(e=>e.id===eventIdParam);
+    history.replaceState({}, '', window.location.pathname);
+    if(sharedEv){
+      openEventsView();
+      setTimeout(()=>openTicketModal(sharedEv.id), 50);
+    }
+  }
+
+  // Lien de partage direct vers un lieu d'excursion (?lieu=catId:lieuId)
+  const lieuParam = params.get('lieu');
+  if(lieuParam && lieuParam.includes(':')){
+    const [sharedCatId, sharedLieuId] = lieuParam.split(':');
+    history.replaceState({}, '', window.location.pathname);
+    if(findLieu(sharedCatId, sharedLieuId)){
+      openLieu(sharedCatId, sharedLieuId);
+    }
+  }
 
   // On ne réaffiche que si quelque chose a vraiment changé par rapport aux valeurs par défaut,
   // et seulement si l'utilisateur est toujours sur une vue concernée (évite un "saut" gênant).
@@ -915,7 +966,10 @@ function renderCategoryView(){
       <div class="body">
         <b>${l.name}</b>
         <p>${l.desc}</p>
-        <button class="btn btn-outline btn-sm" onclick="openLieu('${c.id}','${l.id}')">Voir les photos</button>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-outline btn-sm" onclick="openLieu('${c.id}','${l.id}')" style="flex:1;">Voir les photos</button>
+          <button class="btn btn-outline btn-sm" onclick="shareLieu('${c.id}','${l.id}', event)" title="Partager ce lieu" style="padding:0 14px;">🔗</button>
+        </div>
       </div>
     </div>`;
   }).join('');
@@ -964,6 +1018,7 @@ function renderLieuView(){
           <div class="map-links">
             <a class="btn btn-outline btn-sm" href="${googleLink}" target="_blank" rel="noopener">🗺️ Voir sur Google Maps</a>
             <a class="btn btn-outline btn-sm" href="${appleLink}" target="_blank" rel="noopener">📍 Voir sur Plans</a>
+            <button class="btn btn-outline btn-sm" onclick="shareLieu('${c.id}','${l.id}', event)">🔗 Partager</button>
           </div>
         </div>
         <div class="price-box">
@@ -975,6 +1030,143 @@ function renderLieuView(){
       </div>
     </div>
   `;
+}
+
+function renderLostTicketBox(){
+  return `
+    <div class="lost-ticket-box">
+      <div class="ltb-icon">✉️</div>
+      <div class="ltb-text">
+        <b>Billet perdu ?</b>
+        <span>Saisis l'email utilisé lors de ta réservation — on te renvoie tes codes.</span>
+      </div>
+      <div class="ltb-form">
+        <input type="email" id="recover-email" placeholder="ton@email.com">
+        <button class="btn btn-outline btn-sm" onclick="recoverTickets()">Récupérer mes billets</button>
+      </div>
+      <p class="ltb-status" id="recover-status"></p>
+    </div>`;
+}
+async function pollForTickets(tx, ref, attempt){
+  attempt = attempt || 1;
+  const statusEl = document.getElementById('poll-status');
+  try{
+    const res = await fetchWithTimeout(GOOGLE_SHEETS_URL, {
+      method:'POST',
+      headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body: JSON.stringify({ type:'get-tickets-by-tx', transactionId: tx })
+    }, 8000);
+    const data = await res.json();
+    if(data.ok && data.status === 'paye' && data.tickets && data.tickets.length){
+      showDownloadableTickets(data.tickets, ref);
+      return;
+    }
+  }catch(e){ /* on retente quand même */ }
+
+  if(attempt < 8){
+    if(statusEl) statusEl.textContent = 'Toujours en cours de confirmation… (' + attempt + '/8)';
+    setTimeout(()=>pollForTickets(tx, ref, attempt+1), 3500);
+  }else{
+    if(statusEl) statusEl.innerHTML = 'Ça prend plus de temps que prévu. Ton code arrivera par email dès que le paiement sera confirmé — ou repasse ici avec ta référence <b>'+ref+'</b> via "Billet perdu" sur la page Billetterie.';
+  }
+}
+
+function showDownloadableTickets(tickets, ref){
+  const cardsHtml = tickets.map((t,i)=>`
+    <div class="dl-ticket" id="dl-ticket-${i}">
+      ${t.photo?`<img src="${t.photo}" alt="${t.evenement}">`:''}
+      <div class="dl-ticket-body">
+        <div class="dl-ticket-event">${t.evenement}${t.typeBillet?' · '+t.typeBillet:''}</div>
+        <div class="dl-ticket-code mono">${t.code}</div>
+        <button class="btn btn-primary btn-sm" onclick="downloadTicketImage(${i}, '${t.code}', ${JSON.stringify(t.evenement).replace(/"/g,'&quot;')}, '${t.photo||''}', ${JSON.stringify(t.typeBillet||'').replace(/"/g,'&quot;')})">⬇️ Télécharger le billet</button>
+      </div>
+    </div>`).join('');
+
+  document.getElementById('modal-root').innerHTML = `
+    <div class="overlay" onclick="if(event.target===this) closeModal()">
+      <div class="modal" style="text-align:center;max-width:420px;">
+        <button class="close" onclick="closeModal()">✕</button>
+        <div class="success-icon">✓</div>
+        <h3>${tickets.length>1?tickets.length+' billets prêts !':'Ton billet est prêt !'}</h3>
+        <p class="sub">Référence : <b class="mono" style="color:var(--navy);">${ref}</b></p>
+        <div class="dl-tickets-list">${cardsHtml}</div>
+        <p class="sub" style="margin-top:14px;">Tes billets sont aussi envoyés par email.</p>
+        <div class="send-options">
+          <button class="btn btn-outline" onclick="closeModal(); goHome();">Retour à l'accueil</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+// Dessine le billet sur un canvas (photo + code, même esprit que l'email)
+// et déclenche le téléchargement en image PNG — s'enregistre directement
+// dans les photos/téléchargements du téléphone.
+function downloadTicketImage(idx, code, evenement, photoUrl, typeBillet){
+  const W = 720, H = photoUrl ? 900 : 520;
+  const canvas = document.createElement('canvas');
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext('2d');
+
+  function drawRest(photoImg){
+    ctx.fillStyle = '#FBF7EE'; ctx.fillRect(0,0,W,H);
+    ctx.fillStyle = '#0E3B50'; ctx.fillRect(0,0,W,72);
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 26px Arial'; ctx.textAlign = 'center';
+    ctx.fillText('Aventures Colomb', W/2, 46);
+
+    let y = 72;
+    if(photoImg){
+      const ph = 340;
+      ctx.drawImage(photoImg, 0, y, W, ph);
+      y += ph;
+    }
+
+    ctx.fillStyle = '#0E3B50'; ctx.fillRect(24, y+20, W-48, H-y-60);
+    if(typeBillet){
+      ctx.fillStyle = '#F2884B'; ctx.font = 'bold 14px Arial'; ctx.textAlign='center';
+      ctx.fillText(typeBillet.toUpperCase(), W/2, y+48);
+    }
+    ctx.fillStyle = '#c3d2da'; ctx.font = '13px Arial'; ctx.textAlign='center';
+    ctx.fillText("CODE D'ENTRÉE — À PRÉSENTER LE JOUR J", W/2, y+(typeBillet?76:60));
+    ctx.fillStyle = '#F2884B'; ctx.font = 'bold 52px Courier New'; ctx.textAlign='center';
+    ctx.fillText(code, W/2, y+(typeBillet?146:130));
+    ctx.fillStyle = '#fff'; ctx.font = '18px Arial';
+    ctx.fillText(evenement, W/2, y+(typeBillet?196:180));
+
+    canvas.toBlob(function(blob){
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = 'billet-'+code+'.png';
+      document.body.appendChild(link); link.click(); document.body.removeChild(link);
+    });
+  }
+
+  if(photoUrl){
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = ()=>drawRest(img);
+    img.onerror = ()=>drawRest(null); // image bloquée par CORS -> billet sans photo plutôt que rien
+    img.src = photoUrl;
+  } else {
+    drawRest(null);
+  }
+}
+  const emailEl = document.getElementById('recover-email');
+  const statusEl = document.getElementById('recover-status');
+  const email = emailEl.value.trim();
+  if(!email){ statusEl.textContent = 'Entre ton adresse email.'; return; }
+  statusEl.textContent = 'Recherche en cours…';
+  try{
+    const res = await fetchWithTimeout(GOOGLE_SHEETS_URL, {
+      method:'POST',
+      headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body: JSON.stringify({ type:'recover-tickets', email })
+    }, 10000);
+    await res.json();
+    statusEl.textContent = 'Si cet email est associé à des billets, tu vas les recevoir par email dans quelques instants.';
+    emailEl.value = '';
+  }catch(e){
+    statusEl.textContent = 'Connexion impossible pour le moment, réessaie.';
+  }
 }
 
 async function renderLieuGallery(){
@@ -1002,50 +1194,120 @@ function renderEventsView(){
     return `
       <div class="wrap" style="padding-top:40px;">
         <div class="section-head"><h2>🎟️ Billetterie</h2></div>
+        ${renderLostTicketBox()}
         <div class="empty">Aucun événement en vente pour le moment. Reviens bientôt !</div>
       </div>
     `;
   }
   const cards = upcoming.map(ev=>{
-    const remaining = Math.max(0, (ev.ticketsTotal||0) - (ev.ticketsSold||0));
+    const remaining = eventRemaining(ev);
     const dateAff = ev.date ? new Date(ev.date+'T00:00:00').toLocaleDateString('fr-FR', {weekday:'long', day:'2-digit', month:'2-digit', year:'numeric'}) : 'Date à venir';
     return `
     <div class="lieu-card">
       <div class="thumb">
         <img src="${ev.photo || 'https://picsum.photos/seed/'+ev.id+'/900/650'}" alt="${ev.name}" loading="lazy">
-        <span class="price-tag mono">${fmt(ev.price)} / billet</span>
+        <span class="price-tag mono">Dès ${fmt(eventMinPrice(ev))}</span>
       </div>
       <div class="body">
         <b>${ev.name}</b>
         <p>📅 ${dateAff}${ev.heure?' à '+ev.heure:''}${ev.lieu?' · 📍 '+ev.lieu:''}</p>
         ${renderEventDescription(ev.description, ev.id)}
         <p style="font-weight:600;color:${remaining>0?'var(--teal)':'#B84A3E'};">${remaining>0 ? remaining+' billet(s) restant(s)' : 'Complet'}</p>
-        <button class="btn btn-primary btn-sm" ${remaining<=0?'disabled':''} onclick="openTicketModal('${ev.id}')" style="width:100%;justify-content:center;">${remaining>0?'Réserver un billet':'Complet'}</button>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-primary btn-sm" ${remaining<=0?'disabled':''} onclick="openTicketModal('${ev.id}')" style="flex:1;justify-content:center;">${remaining>0?'Réserver un billet':'Complet'}</button>
+          <button class="btn btn-outline btn-sm" onclick="shareEvent('${ev.id}', event)" title="Partager cette fête" style="padding:0 14px;">🔗</button>
+        </div>
       </div>
     </div>`;
   }).join('');
   return `
     <div class="crumbs"><button onclick="goHome()">Accueil</button><span class="sep">/</span><span class="current">Billetterie</span></div>
     <div class="section-head" style="max-width:1180px;margin:18px auto 0;padding:0 24px;"><h2>🎟️ Événements à venir</h2></div>
+    <div style="max-width:1180px;margin:0 auto;padding:0 24px;">${renderLostTicketBox()}</div>
     <div class="lieu-grid">${cards}</div>
   `;
 }
 
+async function shareLieu(catId, lieuId, e){
+  if(e) e.stopPropagation();
+  const l = findLieu(catId, lieuId);
+  const url = `${window.location.origin}${window.location.pathname}?lieu=${catId}:${lieuId}`;
+  const shareText = `${l?.name||'Un lieu'} — Aventures Colomb`;
+  if(navigator.share){
+    try{ await navigator.share({ title: shareText, text: shareText, url }); return; }
+    catch(err){ return; }
+  }
+  try{
+    await navigator.clipboard.writeText(url);
+    showToast('🔗 Lien copié — colle-le où tu veux !');
+  }catch(err){
+    prompt('Copie ce lien pour le partager :', url);
+  }
+}
+
+async function shareEvent(eventId, e){
+  if(e) e.stopPropagation();
+  const ev = events.find(x=>x.id===eventId);
+  const url = `${window.location.origin}${window.location.pathname}?evenement=${eventId}`;
+  const shareText = `${ev?.name||'Un événement'} — Aventures Colomb`;
+  if(navigator.share){
+    try{ await navigator.share({ title: shareText, text: shareText, url }); return; }
+    catch(err){ /* annulé par l'utilisateur, on ne fait rien */ return; }
+  }
+  try{
+    await navigator.clipboard.writeText(url);
+    showToast('🔗 Lien copié — colle-le où tu veux !');
+  }catch(err){
+    prompt('Copie ce lien pour le partager :', url);
+  }
+}
+function showToast(msg){
+  let t = document.getElementById('ac-toast');
+  if(!t){
+    t = document.createElement('div');
+    t.id = 'ac-toast';
+    t.style.cssText = 'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--navy);color:#fff;padding:11px 18px;border-radius:999px;font-size:13.5px;z-index:999;box-shadow:0 8px 24px rgba(0,0,0,.2);opacity:0;transition:opacity .2s ease;';
+    document.body.appendChild(t);
+  }
+  t.textContent = msg;
+  requestAnimationFrame(()=>{ t.style.opacity='1'; });
+  clearTimeout(t._hideTimer);
+  t._hideTimer = setTimeout(()=>{ t.style.opacity='0'; }, 2600);
+}
+
 let pendingTicket = null;
+let selectedTierId = null;
 function openTicketModal(eventId){
   const ev = events.find(e=>e.id===eventId);
-  const remaining = Math.max(0, (ev.ticketsTotal||0) - (ev.ticketsSold||0));
+  const tiers = getEventTiers(ev);
+  const remaining = eventRemaining(ev);
   pendingTicket = eventId;
+  selectedTierId = tiers.find(t=>((t.total||0)-(t.sold||0))>0)?.id || tiers[0].id;
+
+  const tierOptionsHtml = tiers.map(t=>{
+    const left = Math.max(0,(t.total||0)-(t.sold||0));
+    return `
+    <label class="tier-option ${left<=0?'tier-disabled':''}" style="display:flex;align-items:center;justify-content:space-between;border:1.5px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:8px;cursor:${left<=0?'not-allowed':'pointer'};opacity:${left<=0?'.5':'1'};">
+      <span style="display:flex;align-items:center;gap:8px;">
+        <input type="radio" name="tier" value="${t.id}" ${t.id===selectedTierId?'checked':''} ${left<=0?'disabled':''} onchange="onTierChange('${t.id}')">
+        <span><b>${t.name}</b><br><span class="meta" style="font-size:11.5px;">${left>0?left+' restant(s)':'Épuisé'}</span></span>
+      </span>
+      <span class="mono">${fmt(t.price)}</span>
+    </label>`;
+  }).join('');
+
   const modalRoot = document.getElementById('modal-root');
   modalRoot.innerHTML = `
     <div class="overlay" onclick="if(event.target===this) closeModal()">
       <div class="modal">
         <button class="close" onclick="closeModal()">✕</button>
+        <button class="btn btn-outline btn-sm" onclick="shareEvent('${ev.id}', event)" style="position:absolute;top:14px;left:14px;padding:5px 10px;">🔗 Partager</button>
         <h3>Réserver un billet</h3>
         <p class="sub">${remaining} billet(s) disponible(s) pour "${ev.name}"</p>
+        ${tiers.length>1 ? `<div style="margin:12px 0;">${tierOptionsHtml}</div>` : ''}
         <div class="lieu-recap" id="ticket-recap">
-          <div class="recap-row"><b>${ev.name}</b><span class="mono">${fmt(ev.price)} / billet</span></div>
-          <div class="recap-row recap-total"><b>Total</b><span class="mono" id="ticket-total">${fmt(ev.price)}</span></div>
+          <div class="recap-row"><b id="ticket-tier-label">${tiers.find(t=>t.id===selectedTierId).name}</b><span class="mono" id="ticket-unit-price">${fmt(tiers.find(t=>t.id===selectedTierId).price)}</span></div>
+          <div class="recap-row recap-total"><b>Total</b><span class="mono" id="ticket-total">${fmt(tiers.find(t=>t.id===selectedTierId).price)}</span></div>
         </div>
         <form id="ticket-form" onsubmit="submitTicket(event)">
           <div class="row2">
@@ -1063,22 +1325,37 @@ function openTicketModal(eventId){
     </div>
   `;
 }
+function onTierChange(tierId){
+  selectedTierId = tierId;
+  const ev = events.find(e=>e.id===pendingTicket);
+  const tier = getEventTiers(ev).find(t=>t.id===tierId);
+  const remaining = Math.max(0,(tier.total||0)-(tier.sold||0));
+  const qtyInput = document.getElementById('ticket-qty');
+  qtyInput.max = remaining;
+  if(parseInt(qtyInput.value)>remaining) qtyInput.value = remaining;
+  refreshTicketRecap();
+}
 function refreshTicketRecap(){
   const ev = events.find(e=>e.id===pendingTicket);
-  const remaining = Math.max(0, (ev.ticketsTotal||0) - (ev.ticketsSold||0));
+  const tier = getEventTiers(ev).find(t=>t.id===selectedTierId);
+  const remaining = Math.max(0,(tier.total||0)-(tier.sold||0));
   const qtyInput = document.getElementById('ticket-qty');
   let qty = Math.max(1, parseInt(qtyInput.value) || 1);
   if(qty > remaining){ qty = remaining; qtyInput.value = remaining; }
-  document.getElementById('ticket-total').textContent = fmt(ev.price * qty);
+  document.getElementById('ticket-tier-label').textContent = tier.name;
+  document.getElementById('ticket-unit-price').textContent = fmt(tier.price);
+  document.getElementById('ticket-total').textContent = fmt(tier.price * qty);
 }
 async function submitTicket(e){
   e.preventDefault();
   const fd = new FormData(e.target);
   const ev = events.find(ev=>ev.id===pendingTicket);
-  const remaining = Math.max(0, (ev.ticketsTotal||0) - (ev.ticketsSold||0));
+  const tiers = getEventTiers(ev);
+  const tier = tiers.find(t=>t.id===selectedTierId) || tiers[0];
+  const remaining = Math.max(0,(tier.total||0)-(tier.sold||0));
   let qty = Math.max(1, parseInt(fd.get('quantite'))||1);
-  if(qty > remaining){ alert('Il ne reste que '+remaining+' billet(s) disponible(s).'); return; }
-  const total = ev.price * qty;
+  if(qty > remaining){ alert('Il ne reste que '+remaining+' billet(s) disponible(s) pour cette catégorie.'); return; }
+  const total = tier.price * qty;
   const ref = await nextTicketRef();
   const transactionId = 'TK'+Date.now()+Math.floor(Math.random()*1000);
 
@@ -1089,9 +1366,9 @@ async function submitTicket(e){
   // abandonnés ou échoués.
   const ticket = {
     id:'t'+Date.now(), ref, code:null, used:false, usedAt:null,
-    eventId:ev.id, eventName:ev.name, eventDate:ev.date, eventHeure:ev.heure,
+    eventId:ev.id, eventName:ev.name, eventDate:ev.date, eventHeure:ev.heure, typeBillet:tier.name,
     prenom:fd.get('prenom'), nom:fd.get('nom'), tel:fd.get('tel'), email:fd.get('email'),
-    quantite:qty, prixUnitaire:ev.price, total,
+    quantite:qty, prixUnitaire:tier.price, total,
     date:new Date().toISOString(), traite:false, transactionId, paiement:'En attente'
   };
   const list = (await sGet('ac-tickets-v1')) || [];
@@ -1115,7 +1392,7 @@ async function submitTicket(e){
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify({
         ref, transactionId, dateEnvoi: ticket.date, eventId: ev.id, site: ev.lieu || '',
-        evenement: ticket.eventName, quantite: qty, total,
+        photo: ev.photo || '', evenement: ticket.eventName, typeBillet: tier.name, quantite: qty, total,
         prenom: ticket.prenom, nom: ticket.nom, tel: ticket.tel, email: ticket.email
       })
     }, 10000);
@@ -1159,10 +1436,6 @@ function openBooking(catId,lieuId){
           <div class="row2">
             <div class="field"><label>Prénom *</label><input required name="prenom"></div>
             <div class="field"><label>Nom *</label><input required name="nom"></div>
-          </div>
-          <div class="row2">
-            <div class="field"><label>Année de naissance *</label><input required name="annee" type="number" min="1930" max="2020" placeholder="1995"></div>
-            <div class="field"><label>Pays *</label><input required name="pays" placeholder="Guinée"></div>
           </div>
           <div class="field"><label>Adresse *</label><input required name="adresse" placeholder="Ville, quartier..."></div>
           <div class="row2">
@@ -1270,8 +1543,8 @@ async function submitBooking(e){
     deplacement, typeDeplacement,
     promoCode: promoCode || null,
     discountLabel: discount>0 ? discountLabel : null,
-    prenom: fd.get('prenom'), nom: fd.get('nom'), annee: fd.get('annee'),
-    pays: fd.get('pays'), adresse: fd.get('adresse'), tel: fd.get('tel'), email: fd.get('email'),
+    prenom: fd.get('prenom'), nom: fd.get('nom'),
+    adresse: fd.get('adresse'), tel: fd.get('tel'), email: fd.get('email'),
     suggestions: fd.get('suggestions')||'',
     lieuNom: lieu.name, lieuPrix: lieu.price, categorie: cat.name, unit: lieu.unit||'personne',
     subtotal, discount, total,
@@ -1288,7 +1561,7 @@ async function submitBooking(e){
     dateResa: booking.dateResa, heure: booking.heureResa, participants: booking.participants,
     prix: booking.lieuPrix, total: booking.total,
     prenom: booking.prenom, nom: booking.nom, tel: booking.tel, email: booking.email,
-    pays: booking.pays, adresse: booking.adresse
+    adresse: booking.adresse
   });
 
   const dateAffichee = booking.dateResa ? new Date(booking.dateResa+'T00:00:00').toLocaleDateString('fr-FR', {weekday:'long', day:'2-digit', month:'2-digit', year:'numeric'}) : 'Non précisée';
@@ -1306,8 +1579,6 @@ Total : ${fmt(booking.total)}
 (Formule incluse — extras à la charge du participant sur place)
 
 Nom complet : ${booking.prenom} ${booking.nom}
-Année de naissance : ${booking.annee}
-Pays : ${booking.pays}
 Adresse : ${booking.adresse}
 Téléphone : ${booking.tel}
 Email : ${booking.email}
@@ -1743,7 +2014,7 @@ async function renderAdminReservations(){
         <span class="meta">Demande envoyée le ${d.toLocaleDateString('fr-FR')} à ${d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}</span>
       </div>
       <div>${b.lieuNom} · 📅 ${dateResaAffichee}${b.heureResa?` à ${b.heureResa}`:''} · 👥 ${b.participants||1} pers.${b.deplacement==='oui'?` · 🚗 ${b.typeDeplacement}`:''}</div>
-      <div class="meta">${b.tel} · ${b.email} · ${b.pays}</div>
+      <div class="meta">${b.tel} · ${b.email} · ${b.adresse||''}</div>
       <div style="margin-top:4px;font-family:'JetBrains Mono',monospace;font-size:13px;">
         ${fmt(b.subtotal||b.lieuPrix)}${b.discount ? ` · ${b.discountLabel} : -${fmt(b.discount)}` : ''} · <b>Total : ${fmt(b.total||b.lieuPrix)}</b>
       </div>
@@ -1956,7 +2227,17 @@ async function renderAdminBilletterie(){
   if(!el) return;
 
   const eventsHtml = events.length ? events.map(ev=>{
-    const remaining = Math.max(0, (ev.ticketsTotal||0) - (ev.ticketsSold||0));
+    const tiers = getEventTiers(ev);
+    const remaining = eventRemaining(ev);
+    const tiersRowsHtml = tiers.map((t,i)=>`
+      <div class="row2" style="align-items:flex-end;margin-bottom:6px;" data-tier-row="${t.id}">
+        <div class="field"><label>${i===0?'Catégorie':''}</label><input value="${t.name}" placeholder="Ex: VIP" id="tier-name-${ev.id}-${t.id}"></div>
+        <div class="field"><label>${i===0?'Prix (GNF)':''}</label><input type="number" value="${t.price}" id="tier-price-${ev.id}-${t.id}"></div>
+        <div class="field" style="max-width:110px;"><label>${i===0?'Stock':''}</label><input type="number" value="${t.total||0}" id="tier-total-${ev.id}-${t.id}"></div>
+        <button type="button" class="btn btn-outline btn-sm" style="padding:8px 10px;" onclick="removeTierRow('${ev.id}','${t.id}')" title="Retirer cette catégorie">✕</button>
+      </div>
+      <p class="meta" style="margin:-2px 0 6px;">${t.sold||0} vendu(s) sur cette catégorie</p>
+    `).join('');
     return `
     <div class="admin-lieu" id="admin-event-${ev.id}">
       <div class="row2">
@@ -1967,12 +2248,13 @@ async function renderAdminBilletterie(){
         <div class="field"><label>Date</label><input type="date" value="${ev.date||''}" id="ev-date-${ev.id}"></div>
         <div class="field"><label>Heure</label><input type="time" value="${ev.heure||''}" id="ev-heure-${ev.id}"></div>
       </div>
-      <div class="row2">
-        <div class="field"><label>Prix du billet (GNF)</label><input type="number" value="${ev.price}" id="ev-price-${ev.id}"></div>
-        <div class="field"><label>Nombre total de billets</label><input type="number" value="${ev.ticketsTotal||0}" id="ev-total-${ev.id}"></div>
-      </div>
       <div class="field"><label>Description (visible sur le site, avec "Lire plus" si long)</label><textarea id="ev-desc-${ev.id}" placeholder="Présente l'ambiance, les artistes, ce qui rend cette soirée unique... c'est ce que les clients liront avant d'acheter.">${ev.description||''}</textarea></div>
-      <p class="meta">🎟️ ${ev.ticketsSold||0} vendu(s) · ${remaining} restant(s)</p>
+
+      <div class="cat-label" style="margin:14px 0 8px;font-size:13px;">🎟️ Catégories de billets</div>
+      <div id="tiers-box-${ev.id}">${tiersRowsHtml}</div>
+      <button type="button" class="btn btn-outline btn-sm" style="margin-top:2px;" onclick="addTierRow('${ev.id}')">+ Ajouter une catégorie (ex: VIP, VVIP)</button>
+
+      <p class="meta" style="margin-top:10px;">🎟️ ${remaining} billet(s) restant(s) au total, toutes catégories confondues</p>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
         <button class="btn btn-teal btn-sm" onclick="saveEvent('${ev.id}')">Enregistrer</button>
         <label class="upload-btn">📷 Photo
@@ -2056,9 +2338,24 @@ async function checkEntryCode(){
 }
 
 async function addNewEvent(){
-  const newEv = {id:'ev'+Date.now(), name:'Nouvel événement', lieu:'', date:'', heure:'', price:0, ticketsTotal:0, ticketsSold:0, description:'', photo:null};
+  const newEv = {id:'ev'+Date.now(), name:'Nouvel événement', lieu:'', date:'', heure:'', description:'', photo:null,
+    tiers:[{id:'t'+Date.now(), name:'Général', price:0, total:0, sold:0}]};
   events.push(newEv);
   await sSet('ac-events-v1', events);
+  renderAdminBilletterie();
+}
+function addTierRow(eventId){
+  const ev = events.find(e=>e.id===eventId);
+  const tiers = getEventTiers(ev);
+  ev.tiers = tiers; // matérialise les tiers legacy si besoin, avant d'en ajouter un
+  ev.tiers.push({id:'t'+Date.now(), name:'VIP', price:0, total:0, sold:0});
+  renderAdminBilletterie();
+}
+function removeTierRow(eventId, tierId){
+  const ev = events.find(e=>e.id===eventId);
+  const tiers = getEventTiers(ev);
+  if(tiers.length<=1){ alert('Il doit rester au moins une catégorie de billet.'); return; }
+  ev.tiers = tiers.filter(t=>t.id!==tierId);
   renderAdminBilletterie();
 }
 async function saveEvent(id){
@@ -2067,9 +2364,24 @@ async function saveEvent(id){
   ev.lieu = document.getElementById('ev-lieu-'+id).value.trim();
   ev.date = document.getElementById('ev-date-'+id).value;
   ev.heure = document.getElementById('ev-heure-'+id).value;
-  ev.price = parseInt(document.getElementById('ev-price-'+id).value) || 0;
-  ev.ticketsTotal = parseInt(document.getElementById('ev-total-'+id).value) || 0;
   ev.description = document.getElementById('ev-desc-'+id).value.trim();
+
+  const tiers = getEventTiers(ev);
+  ev.tiers = tiers.map(t=>{
+    const nameEl = document.getElementById(`tier-name-${id}-${t.id}`);
+    const priceEl = document.getElementById(`tier-price-${id}-${t.id}`);
+    const totalEl = document.getElementById(`tier-total-${id}-${t.id}`);
+    return {
+      id: t.id,
+      name: (nameEl?.value.trim()) || t.name,
+      price: parseInt(priceEl?.value) || 0,
+      total: parseInt(totalEl?.value) || 0,
+      sold: t.sold || 0
+    };
+  });
+  // Nettoyage des anciens champs à plat, désormais remplacés par ev.tiers
+  delete ev.price; delete ev.ticketsTotal; delete ev.ticketsSold;
+
   await sSet('ac-events-v1', events);
   const box = document.getElementById('admin-event-'+id);
   if(box){

@@ -22,7 +22,7 @@ exports.handler = async (event) => {
   try { body = JSON.parse(event.body); }
   catch (e) { return { statusCode: 400, body: JSON.stringify({ ok: false, error: 'Requête invalide' }) }; }
 
-  const { ref, transactionId, dateEnvoi, evenement, eventId, site, quantite, total, prenom, nom, tel, email } = body;
+  const { ref, transactionId, dateEnvoi, evenement, eventId, site, photo, typeBillet, quantite, total, prenom, nom, tel, email } = body;
 
   if (!ref || !transactionId || !evenement || !total || total <= 0) {
     return { statusCode: 400, body: JSON.stringify({ ok: false, error: 'Informations de billet incomplètes' }) };
@@ -34,7 +34,7 @@ exports.handler = async (event) => {
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
     body: JSON.stringify({
       type: 'ticket-pending',
-      ref, transactionId, dateEnvoi, evenement, eventId, site, quantite, total, prenom, nom, tel, email
+      ref, transactionId, dateEnvoi, evenement, eventId, site, photo, typeBillet, quantite, total, prenom, nom, tel, email
     })
   });
   const pendingData = await pendingRes.json();
@@ -54,7 +54,7 @@ exports.handler = async (event) => {
       currency: 'GNF',
       description: `Billet ${evenement} - Aventures Colomb`,
       notify_url: `${process.env.SITE_URL}/.netlify/functions/notify-payment`,
-      return_url: `${process.env.SITE_URL}/?paiement=merci&ref=${encodeURIComponent(ref)}`,
+      return_url: `${process.env.SITE_URL}/?paiement=merci&ref=${encodeURIComponent(ref)}&tx=${encodeURIComponent(transactionId)}`,
       channels: 'MOBILE_MONEY',
       customer_name: nom || 'Client',
       customer_surname: prenom || '',

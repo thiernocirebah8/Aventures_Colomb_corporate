@@ -381,6 +381,45 @@ const GOOGLE_SHEETS_URL = 'https://script.google.com/macros/s/AKfycbytPAAXjSR2vT
    si tu gardes ce chemin par défaut. */
 const TICKET_PAYMENT_URL = '/.netlify/functions/init-ticket-payment';
 
+/* ============================================================
+   SUPABASE — billetterie (événements, catégories de billets, billets)
+   La clé ci-dessous est la clé PUBLIQUE (anon/publishable) : elle ne donne
+   accès qu'à la LECTURE des événements/catégories (politiques RLS), jamais
+   aux billets eux-mêmes (emails/téléphones clients) ni à l'écriture. Toute
+   écriture admin passe par admin-tickets.js, qui utilise la clé secrète
+   côté serveur uniquement.
+   ============================================================ */
+const SUPABASE_URL = 'https://nkbwfnhxssbxrbiolyhv.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_nWrZ1LA8jeFF4PXNjtQbOg_RqUONkVD';
+const ADMIN_TICKETS_URL = '/.netlify/functions/admin-tickets';
+const GET_TICKET_STATUS_URL = '/.netlify/functions/get-ticket-status';
+const RECOVER_TICKETS_URL = '/.netlify/functions/recover-tickets';
+
+async function loadEventsFromSupabase(){
+  try{
+    const res = await fetchWithTimeout(
+      `${SUPABASE_URL}/rest/v1/events?select=*,ticket_tiers(*)&order=created_at.desc`,
+      { headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` } },
+      8000
+    );
+    if(!res.ok) return [];
+    const rows = await res.json();
+    return rows.map(r => ({
+      id: r.id,
+      name: r.name,
+      lieu: r.lieu || '',
+      date: r.event_date || '',
+      heure: r.heure ? String(r.heure).slice(0,5) : '',
+      description: r.description || '',
+      photo: r.photo || null,
+      tiers: (r.ticket_tiers||[]).map(t => ({ id:t.id, name:t.name, price:t.price, total:t.total, sold:t.sold }))
+    }));
+  }catch(e){
+    console.warn('Impossible de charger les événements depuis Supabase pour le moment.', e);
+    return [];
+  }
+}
+
 /* Précharge TOUT le contenu partagé en 1 seule requête réseau (au lieu d'une
    requête par information demandée). Essentiel sur connexion faible/instable :
    1 aller-retour lent vaut mieux que 7-8 allers-retours lents à la suite. */
@@ -566,12 +605,6 @@ async function recoverPendingRecords(){
           list.unshift(item.record);
           await sSet('ac-bookings-v1', list);
         }
-      } else if(item.kind === 'ticket'){
-        const list = (await sGet('ac-tickets-v1')) || [];
-        if(!list.some(t=>t.id===item.record.id)){
-          list.unshift(item.record);
-          await sSet('ac-tickets-v1', list);
-        }
       }
       clearPendingRecord(item.record.id);
     }catch(e){ /* on retentera au prochain chargement */ }
@@ -720,6 +753,7 @@ let events = [];               // liste des événements (billetterie)
 let categoryIcons = {};        // catId -> image perso (base64) si définie
 let whyIcons = {};             // pointId -> image perso (base64) si définie
 let isAdmin = false;
+let adminSessionPassword = null;
 let nav = {view:'home', categoryId:null, lieuId:null};
 let galleryIndex = 0;
 let pendingBooking = null;
@@ -965,12 +999,12 @@ async function init(){
   //    l'admin : prix ajustés, nouveaux lieux, icônes perso...) en arrière-plan,
   //    sans bloquer l'affichage. Si ça prend trop de temps ou échoue, la page
   //    reste utilisable avec les valeurs par défaut ci-dessus.
-  const [savedContent, savedAdminConfig, savedPromoConfig, savedTestimonials, savedEvents, savedCatIcons, savedWhyIcons, savedLoyaltyConfig, savedLoyaltyClients] = await Promise.all([
+  const [savedContent, savedAdminConfig, savedPromoConfig, savedTestimonials, supabaseEvents, savedCatIcons, savedWhyIcons, savedLoyaltyConfig, savedLoyaltyClients] = await Promise.all([
     sGet('ac-content-v1'),
     sGet('ac-admin-config-v1'),
     sGet('ac-promo-v1'),
     sGet('ac-testimonials-v1'),
-    sGet('ac-events-v1'),
+    loadEventsFromSupabase(),
     sGet('ac-all-cat-icons-v1'),
     sGet('ac-all-why-icons-v1'),
     sGet('ac-loyalty-config-v1'),
@@ -986,12 +1020,9 @@ async function init(){
   if(savedAdminConfig) adminConfig = savedAdminConfig; else await sSet('ac-admin-config-v1', adminConfig);
   if(savedPromoConfig) promoConfig = savedPromoConfig; else await sSet('ac-promo-v1', promoConfig);
   if(savedTestimonials) testimonials = savedTestimonials; else await sSet('ac-testimonials-v1', testimonials);
-  if(savedEvents && isValidEventsList(savedEvents)){
-    events = savedEvents;
-  } else {
-    if(savedEvents) console.warn('⚠️ ac-events-v1 corrompu ou invalide — restauration des valeurs par défaut.');
-    await sSet('ac-events-v1', events);
-  }
+  // La billetterie (événements + catégories de billets) vit maintenant dans
+  // Supabase, plus dans Google Sheets — voir loadEventsFromSupabase().
+  events = supabaseEvents || [];
   if(savedLoyaltyConfig) loyaltyConfig = savedLoyaltyConfig; else await sSet('ac-loyalty-config-v1', loyaltyConfig);
   if(savedLoyaltyClients) loyaltyClients = savedLoyaltyClients; else await sSet('ac-loyalty-clients-v1', loyaltyClients);
 
@@ -1204,10 +1235,10 @@ async function pollForTickets(tx, ref, attempt){
   attempt = attempt || 1;
   const statusEl = document.getElementById('poll-status');
   try{
-    const res = await fetchWithTimeout(GOOGLE_SHEETS_URL, {
+    const res = await fetchWithTimeout(GET_TICKET_STATUS_URL, {
       method:'POST',
-      headers:{'Content-Type':'text/plain;charset=utf-8'},
-      body: JSON.stringify({ type:'get-tickets-by-tx', transactionId: tx })
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ transactionId: tx })
     }, 8000);
     const data = await res.json();
     if(data.ok && data.status === 'paye' && data.tickets && data.tickets.length){
@@ -1310,10 +1341,10 @@ function downloadTicketImage(idx, code, evenement, photoUrl, typeBillet){
   if(!email){ statusEl.textContent = 'Entre ton adresse email.'; return; }
   statusEl.textContent = 'Recherche en cours…';
   try{
-    const res = await fetchWithTimeout(GOOGLE_SHEETS_URL, {
+    const res = await fetchWithTimeout(RECOVER_TICKETS_URL, {
       method:'POST',
-      headers:{'Content-Type':'text/plain;charset=utf-8'},
-      body: JSON.stringify({ type:'recover-tickets', email })
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ email })
     }, 10000);
     await res.json();
     statusEl.textContent = 'Si cet email est associé à des billets, tu vas les recevoir par email dans quelques instants.';
@@ -1517,11 +1548,9 @@ async function submitTicket(e){
   const ref = await nextTicketRef();
   const transactionId = 'TK'+Date.now()+Math.floor(Math.random()*1000);
 
-  // Le billet est réservé provisoirement (code vide, paiement en attente).
-  // IMPORTANT : ticketsSold n'est PAS incrémenté ici — seulement quand le
-  // paiement CinetPay est confirmé (côté Apps Script), pour que le compteur
-  // "billets vendus" reste toujours exact et ne compte pas les paiements
-  // abandonnés ou échoués.
+  // Le billet lui-même est créé de façon atomique côté Supabase, dans
+  // init-ticket-payment (fonction purchase_ticket) — pas ici. On ne garde en
+  // mémoire que l'objet local nécessaire à l'affichage pendant la redirection.
   const ticket = {
     id:'t'+Date.now(), ref, code:null, used:false, usedAt:null,
     eventId:ev.id, eventName:ev.name, eventDate:ev.date, eventHeure:ev.heure, typeBillet:tier.name,
@@ -1529,16 +1558,10 @@ async function submitTicket(e){
     quantite:qty, prixUnitaire:tier.price, total,
     date:new Date().toISOString(), traite:false, transactionId, paiement:'En attente'
   };
-  backupPendingRecord('ticket', ticket);
-  const list = (await sGet('ac-tickets-v1')) || [];
-  list.unshift(ticket);
-  await sSet('ac-tickets-v1', list);
-  clearPendingRecord(ticket.id);
 
   // Ouvre le guichet de paiement CinetPay (Orange Money et autres mobile money).
-  // La ligne "Tickets" côté Google Sheets est créée par init-ticket-payment,
-  // le code ET l'incrémentation de ticketsSold se font tous deux par Apps
-  // Script une fois le paiement confirmé (webhook notify-payment).
+  // La réservation du billet (verrou anti-survente) se fait maintenant côté
+  // Supabase, dans init-ticket-payment, AVANT même l'ouverture du paiement.
   document.getElementById('modal-root').innerHTML = `
     <div class="overlay"><div class="modal" style="text-align:center;">
       <div class="success-icon">⏳</div>
@@ -1551,7 +1574,7 @@ async function submitTicket(e){
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify({
-        ref, transactionId, dateEnvoi: ticket.date, eventId: ev.id, site: ev.lieu || '',
+        ref, transactionId, ticketId: ticket.id, tierId: tier.id, dateEnvoi: ticket.date, eventId: ev.id, site: ev.lieu || '',
         photo: ev.photo || '', evenement: ticket.eventName, typeBillet: tier.name, quantite: qty, total,
         prenom: ticket.prenom, nom: ticket.nom, tel: ticket.tel, email: ticket.email
       })
@@ -1980,7 +2003,7 @@ async function checkAdminPassword(e){
       const data = await resp.json();
       if(data.configured){
         // La fonction existe et répond : c'est elle qui décide, on ne retombe pas sur le mode local.
-        if(data.valid){ isAdmin = true; closeModal(); nav={view:'admin'}; render(); }
+        if(data.valid){ isAdmin = true; adminSessionPassword = val; closeModal(); nav={view:'admin'}; render(); }
         else { errorBox.textContent = 'Mot de passe incorrect.'; }
         return;
       }
@@ -1992,12 +2015,12 @@ async function checkAdminPassword(e){
 
   // 2) Mode de secours (fonctionne toujours ici dans Claude et en local) : vérifie contre le mot de passe stocké sur ce site.
   if(val === adminConfig.password){
-    isAdmin = true; closeModal(); nav={view:'admin'}; render();
+    isAdmin = true; adminSessionPassword = val; closeModal(); nav={view:'admin'}; render();
   } else {
     errorBox.textContent = 'Mot de passe incorrect.';
   }
 }
-function logoutAdmin(){ isAdmin=false; goHome(); }
+function logoutAdmin(){ isAdmin=false; adminSessionPassword=null; goHome(); }
 
 let adminTab = 'dashboard';
 function setAdminTab(t){ adminTab=t; render(); }
@@ -2439,11 +2462,16 @@ async function renderAdminDashboard(){
   let list = [], ticketsList = [], loadError = false;
   try{
     list = (await sGet('ac-bookings-v1')) || [];
-    ticketsList = (await sGet('ac-tickets-v1')) || [];
+    const ticketsResult = await callAdminTickets('listTickets');
+    ticketsList = ticketsResult.ok ? ticketsResult.tickets : [];
+    if(!ticketsResult.ok) loadError = true;
   }catch(e){
     loadError = true;
     console.error('Erreur de chargement du tableau de bord', e);
   }
+  // Seuls les billets réellement payés comptent comme "vendus" — un paiement
+  // abandonné ou échoué ne doit ni gonfler le revenu ni compter un client.
+  const paidTickets = ticketsList.filter(t=>t.paiement==='Payé');
   const now = new Date();
   const isThisMonth = d => { const dd=new Date(d); return dd.getMonth()===now.getMonth() && dd.getFullYear()===now.getFullYear(); };
   const isToday = d => { const dd=new Date(d); return dd.toDateString()===now.toDateString(); };
@@ -2458,7 +2486,7 @@ async function renderAdminDashboard(){
 
   const clientKeys = new Set();
   list.forEach(b=>{ const k=(b.email||'').trim().toLowerCase() || (b.tel||'').replace(/\D/g,''); if(k) clientKeys.add(k); });
-  ticketsList.forEach(t=>{ const k=(t.email||'').trim().toLowerCase() || (t.tel||'').replace(/\D/g,''); if(k) clientKeys.add(k); });
+  paidTickets.forEach(t=>{ const k=(t.email||'').trim().toLowerCase() || (t.tel||'').replace(/\D/g,''); if(k) clientKeys.add(k); });
   const uniqueClients = clientKeys.size;
 
   const countByCat = {};
@@ -2467,8 +2495,8 @@ async function renderAdminDashboard(){
   let topCatCount = 0;
   Object.entries(countByCat).forEach(([k,v])=>{ if(v>topCatCount){ topCat=k; topCatCount=v; } });
 
-  const ticketsSoldTotal = ticketsList.reduce((s,t)=>s+(t.quantite||0),0);
-  const ticketsRevenue = ticketsList.reduce((s,t)=>s+(t.total||0),0);
+  const ticketsSoldTotal = paidTickets.reduce((s,t)=>s+(t.quantite||0),0);
+  const ticketsRevenue = paidTickets.reduce((s,t)=>s+(t.total||0),0);
   const sync = getSyncStatus();
 
   el.innerHTML = `
@@ -2495,9 +2523,23 @@ async function renderAdminDashboard(){
 /* -- Tableau de bord -- fin */
 
 /* -- Billetterie tab (admin) -- */
+async function callAdminTickets(action, params={}){
+  try{
+    const res = await fetchWithTimeout(ADMIN_TICKETS_URL, {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ action, password: adminSessionPassword, ...params })
+    }, 12000);
+    return await res.json();
+  }catch(e){
+    return { ok:false, error:'Connexion au serveur impossible pour le moment.' };
+  }
+}
+
 async function renderAdminBilletterie(){
   const el = document.getElementById('admin-tab-content');
   if(!el) return;
+  el.innerHTML = `<div class="empty"><span class="spin"></span> Chargement de la billetterie...</div>`;
 
   const eventsHtml = events.length ? events.map(ev=>{
     const tiers = getEventTiers(ev);
@@ -2539,7 +2581,8 @@ async function renderAdminBilletterie(){
     </div>`;
   }).join('') : `<div class="empty">Aucun événement créé pour le moment.</div>`;
 
-  const ticketsList = (await sGet('ac-tickets-v1')) || [];
+  const listResult = await callAdminTickets('listTickets');
+  const ticketsList = listResult.ok ? listResult.tickets : [];
   const ticketsHtml = ticketsList.length ? ticketsList.map(t=>{
     const d = new Date(t.date);
     return `
@@ -2551,7 +2594,7 @@ async function renderAdminBilletterie(){
         </div>
         <span class="meta">${d.toLocaleDateString('fr-FR')} à ${d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}</span>
       </div>
-      <div>${t.eventName} · 🎟️ ${t.quantite} billet(s) · <b>${fmt(t.total)}</b> · Code : <span class="mono">${t.code||'—'}</span></div>
+      <div>${t.eventName}${t.typeBillet?' · '+t.typeBillet:''} · 🎟️ ${t.quantite} billet(s) · <b>${fmt(t.total)}</b> · Code : <span class="mono">${t.code||'—'}</span> · <span style="color:${t.paiement==='Payé'?'var(--green)':(t.paiement==='Échoué'?'#B84A3E':'var(--orange)')};">${t.paiement||''}</span></div>
       <div class="meta">${t.tel} · ${t.email}</div>
       <div style="margin-top:8px;display:flex;gap:8px;">
         ${!t.traite?`<button class="btn btn-teal btn-sm" onclick="markTicketDone('${t.id}')">Marquer traité</button>`:''}
@@ -2561,6 +2604,7 @@ async function renderAdminBilletterie(){
   }).join('') : `<div class="empty">Aucun billet vendu pour le moment.</div>`;
 
   el.innerHTML = `
+    ${!listResult.ok ? `<div class="notice" style="background:rgba(184,74,62,0.12);border-color:rgba(184,74,62,0.4);color:#8a2f24;margin-bottom:14px;">⚠️ ${listResult.error||'Impossible de charger les billets vendus pour le moment.'}</div>` : ''}
     <div class="cat-label">🔎 Vérification à l'entrée</div>
     <p style="font-size:12.5px;color:#6b8391;margin:6px 0 12px;">Le client te donne son code à 5 caractères — tape-le ici pour valider son entrée.</p>
     <div style="display:flex;gap:8px;flex-wrap:wrap;max-width:420px;">
@@ -2589,32 +2633,27 @@ async function checkEntryCode(){
   const code = (input.value||'').trim().toUpperCase();
   if(!code){ resultBox.innerHTML = ''; return; }
 
-  const list = (await sGet('ac-tickets-v1')) || [];
-  const ticket = list.find(t => (t.code||'').toUpperCase() === code);
+  resultBox.innerHTML = `<span class="spin"></span>`;
+  const result = await callAdminTickets('checkEntryCode', { code });
 
-  if(!ticket){
-    resultBox.innerHTML = `<div class="notice" style="background:rgba(184,74,62,0.12);border-color:rgba(184,74,62,0.4);color:#8a2f24;">❌ Code invalide — aucun billet ne correspond à "${code}".</div>`;
+  if(!result.ok){
+    resultBox.innerHTML = `<div class="notice" style="background:rgba(184,74,62,0.12);border-color:rgba(184,74,62,0.4);color:#8a2f24;">❌ ${result.error || 'Code invalide.'}</div>`;
     return;
   }
-  if(ticket.used){
-    const usedDate = ticket.usedAt ? new Date(ticket.usedAt).toLocaleString('fr-FR') : '';
-    resultBox.innerHTML = `<div class="notice" style="background:rgba(184,74,62,0.12);border-color:rgba(184,74,62,0.4);color:#8a2f24;">❌ Code déjà utilisé — ${ticket.prenom} ${ticket.nom}, entré le ${usedDate}.</div>`;
-    return;
-  }
-
-  ticket.used = true;
-  ticket.usedAt = new Date().toISOString();
-  await sSet('ac-tickets-v1', list);
-  resultBox.innerHTML = `<div class="notice" style="background:rgba(62,122,87,0.15);border-color:rgba(62,122,87,0.4);color:var(--green);">✅ Billet valide — ${ticket.prenom} ${ticket.nom} · ${ticket.eventName} · ${ticket.quantite} billet(s)</div>`;
+  const t = result.ticket;
+  resultBox.innerHTML = `<div class="notice" style="background:rgba(62,122,87,0.15);border-color:rgba(62,122,87,0.4);color:var(--green);">✅ Billet valide — ${t.prenom} ${t.nom} · ${t.eventName} · ${t.quantite} billet(s)</div>`;
   input.value = '';
-  renderAdminBilletterie();
 }
 
 async function addNewEvent(){
   const newEv = {id:'ev'+Date.now(), name:'Nouvel événement', lieu:'', date:'', heure:'', description:'', photo:null,
     tiers:[{id:'t'+Date.now(), name:'Général', price:0, total:0, sold:0}]};
+  const result = await callAdminTickets('createEvent', {
+    id:newEv.id, name:newEv.name, lieu:newEv.lieu, date:newEv.date, heure:newEv.heure, description:newEv.description, photo:newEv.photo,
+    tiers:newEv.tiers.map(t=>({id:t.id,name:t.name,price:t.price,total:t.total}))
+  });
+  if(!result.ok){ alert(result.error || "Impossible de créer l'événement."); return; }
   events.push(newEv);
-  await sSet('ac-events-v1', events);
   renderAdminBilletterie();
 }
 function addTierRow(eventId){
@@ -2655,42 +2694,53 @@ async function saveEvent(id){
   // Nettoyage des anciens champs à plat, désormais remplacés par ev.tiers
   delete ev.price; delete ev.ticketsTotal; delete ev.ticketsSold;
 
-  await sSet('ac-events-v1', events);
   const box = document.getElementById('admin-event-'+id);
+  const result = await callAdminTickets('updateEvent', {
+    eventId: id, name: ev.name, lieu: ev.lieu, date: ev.date, heure: ev.heure, description: ev.description,
+    tiers: ev.tiers.map(t=>({id:t.id, name:t.name, price:t.price, total:t.total}))
+  });
+  if(!result.ok){
+    alert(result.error || "Erreur lors de l'enregistrement.");
+    return;
+  }
   if(box){
     const tag = document.createElement('div');
-    tag.textContent = '✓ Enregistré';
-    tag.style.cssText='color:var(--green);font-size:12px;font-weight:600;margin-top:6px;';
+    tag.textContent = result.warning ? ('⚠️ '+result.warning) : '✓ Enregistré';
+    tag.style.cssText = 'color:'+(result.warning?'var(--orange)':'var(--green)')+';font-size:12px;font-weight:600;margin-top:6px;';
     box.appendChild(tag);
-    setTimeout(()=>tag.remove(),1800);
+    setTimeout(()=>tag.remove(), result.warning?4500:1800);
   }
+  // Recharge depuis Supabase pour refléter l'état réel (ex: catégories qu'on
+  // n'a pas pu supprimer parce que des billets ont déjà été vendus dessus).
+  events = await loadEventsFromSupabase();
+  renderAdminBilletterie();
 }
 async function uploadEventPhoto(e,id){
   const file = e.target.files[0];
   if(!file) return;
   const dataUrl = await uploadImageSmart(file);
+  const result = await callAdminTickets('uploadEventPhoto', { eventId:id, photo:dataUrl });
+  if(!result.ok){ alert(result.error || "Erreur lors de l'enregistrement de la photo."); return; }
   const ev = events.find(ev=>ev.id===id);
-  ev.photo = dataUrl;
-  await sSet('ac-events-v1', events);
+  if(ev) ev.photo = dataUrl;
   renderAdminBilletterie();
 }
 async function deleteEvent(id){
   if(!confirm('Supprimer définitivement cet événement ?')) return;
+  const result = await callAdminTickets('deleteEvent', { eventId:id });
+  if(!result.ok){ alert(result.error || 'Suppression impossible.'); return; }
   events = events.filter(e=>e.id!==id);
-  await sSet('ac-events-v1', events);
   renderAdminBilletterie();
 }
 async function markTicketDone(id){
-  const list = (await sGet('ac-tickets-v1')) || [];
-  const t = list.find(x=>x.id===id); if(t) t.traite = true;
-  await sSet('ac-tickets-v1', list);
+  const result = await callAdminTickets('markTicketTraite', { ticketId:id });
+  if(!result.ok){ alert(result.error || 'Erreur.'); return; }
   renderAdminBilletterie();
 }
 async function deleteTicket(id){
   if(!confirm('Supprimer ce billet ?')) return;
-  let list = (await sGet('ac-tickets-v1')) || [];
-  list = list.filter(x=>x.id!==id);
-  await sSet('ac-tickets-v1', list);
+  const result = await callAdminTickets('deleteTicket', { ticketId:id });
+  if(!result.ok){ alert(result.error || 'Erreur.'); return; }
   renderAdminBilletterie();
 }
 

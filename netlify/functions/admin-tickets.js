@@ -24,6 +24,12 @@ function sbRpcUrl(fn){ return `${process.env.SUPABASE_URL}/rest/v1/rpc/${fn}`; }
 
 function ok(data){ return { statusCode: 200, body: JSON.stringify({ ok: true, ...data }) }; }
 function fail(statusCode, error){ return { statusCode, body: JSON.stringify({ ok: false, error }) }; }
+function generatePartnerCode(){
+  const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  let code = '';
+  for(let i=0;i<8;i++){ code += chars[Math.floor(Math.random()*chars.length)]; }
+  return code;
+}
 
 exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') return fail(405, 'Méthode non autorisée');
@@ -41,12 +47,44 @@ exports.handler = async (event) => {
   try{
     switch (action){
 
+      case 'listEvents': {
+        const evRes = await fetch(sbUrl('events?select=*,ticket_tiers(*)&order=created_at.desc'), { headers: SUPABASE_HEADERS });
+        if(!evRes.ok) return fail(500, "Impossible de charger les événements.");
+        const rows = await evRes.json();
+
+        // Revenu payé par événement, pour calculer la part à reverser aux partenaires.
+        const paidRes = await fetch(sbUrl('tickets?paiement=eq.Payé&select=event_id,total'), { headers: SUPABASE_HEADERS });
+        const paidRows = paidRes.ok ? await paidRes.json() : [];
+        const revenueByEvent = {};
+        for(const t of paidRows){ revenueByEvent[t.event_id] = (revenueByEvent[t.event_id]||0) + (t.total||0); }
+
+        const events = rows.map(r => {
+          const revenuPaye = revenueByEvent[r.id] || 0;
+          const commissionPct = r.partner_commission_percent || 0;
+          const partPartenaire = r.partner_orange_number ? Math.round(revenuPaye * (1 - commissionPct/100)) : null;
+          return {
+            id: r.id, name: r.name, lieu: r.lieu || '', date: r.event_date || '', heure: r.heure ? String(r.heure).slice(0,5) : '',
+            description: r.description || '', photo: r.photo || null,
+            partnerName: r.partner_name || '', partnerOrangeNumber: r.partner_orange_number || '', partnerCommissionPercent: commissionPct,
+            partnerAccessCode: r.partner_access_code || '',
+            revenuPaye, partPartenaire,
+            tiers: (r.ticket_tiers||[]).map(t => ({ id:t.id, name:t.name, price:t.price, total:t.total, sold:t.sold }))
+          };
+        });
+        return ok({ events });
+      }
+
       case 'createEvent': {
-        const { id, name, lieu, date, heure, description, photo, tiers } = body;
+        const { id, name, lieu, date, heure, description, photo, tiers, partnerName, partnerOrangeNumber, partnerCommissionPercent } = body;
         const evRes = await fetch(sbUrl('events'), {
           method: 'POST',
           headers: { ...SUPABASE_HEADERS, 'Prefer': 'return=representation' },
-          body: JSON.stringify([{ id, name, lieu: lieu||null, event_date: date||null, heure: heure||null, description: description||'', photo: photo||null }])
+          body: JSON.stringify([{
+            id, name, lieu: lieu||null, event_date: date||null, heure: heure||null, description: description||'', photo: photo||null,
+            partner_name: partnerName || null, partner_orange_number: partnerOrangeNumber || null,
+            partner_commission_percent: partnerCommissionPercent || 0,
+            partner_access_code: generatePartnerCode()
+          }])
         });
         if(!evRes.ok) return fail(500, "Impossible de créer l'événement.");
 
@@ -62,11 +100,15 @@ exports.handler = async (event) => {
       }
 
       case 'updateEvent': {
-        const { eventId, name, lieu, date, heure, description, tiers } = body;
+        const { eventId, name, lieu, date, heure, description, tiers, partnerName, partnerOrangeNumber, partnerCommissionPercent } = body;
         const evRes = await fetch(sbUrl(`events?id=eq.${encodeURIComponent(eventId)}`), {
           method: 'PATCH',
           headers: SUPABASE_HEADERS,
-          body: JSON.stringify({ name, lieu: lieu||null, event_date: date||null, heure: heure||null, description: description||'' })
+          body: JSON.stringify({
+            name, lieu: lieu||null, event_date: date||null, heure: heure||null, description: description||'',
+            partner_name: partnerName || null, partner_orange_number: partnerOrangeNumber || null,
+            partner_commission_percent: partnerCommissionPercent || 0
+          })
         });
         if(!evRes.ok) return fail(500, "Impossible de mettre à jour l'événement.");
 
@@ -169,6 +211,16 @@ exports.handler = async (event) => {
           body: JSON.stringify({ used: true, used_at: new Date().toISOString() })
         });
         return ok({ ticket: { prenom:ticket.prenom, nom:ticket.nom, quantite:ticket.quantite, eventName: ticket.events?.name || '' } });
+      }
+
+      case 'regeneratePartnerCode': {
+        const { eventId } = body;
+        const newCode = generatePartnerCode();
+        const res = await fetch(sbUrl(`events?id=eq.${encodeURIComponent(eventId)}`), {
+          method: 'PATCH', headers: SUPABASE_HEADERS, body: JSON.stringify({ partner_access_code: newCode })
+        });
+        if(!res.ok) return fail(500, 'Erreur lors de la régénération du code.');
+        return ok({ partnerAccessCode: newCode });
       }
 
       default:

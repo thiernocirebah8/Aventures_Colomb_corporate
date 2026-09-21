@@ -2,3 +2,5 @@
 [build]
   functions = "netlify/functions"
   publish = "."
+[functions."cleanup-pending-tickets"]
+  schedule = "*/15 * * * *"

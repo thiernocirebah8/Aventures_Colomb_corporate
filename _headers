@@ -1,0 +1,24 @@
+# En-têtes de sécurité et de cache (Netlify) — à placer à la racine du site publié.
+
+/*
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: SAMEORIGIN
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(self), microphone=(), geolocation=(), payment=()
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+  # CSP en mode "rapport seulement" : n'empêche rien de fonctionner, mais la console
+  # du navigateur (F12) signale ce qui serait bloqué. Une fois la console propre
+  # pendant quelques jours, remplace le nom par : Content-Security-Policy
+  Content-Security-Policy-Report-Only: default-src 'self'; script-src 'self' 'unsafe-inline' https://www.googletagmanager.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https://picsum.photos https://res.cloudinary.com https://*.google-analytics.com https://*.googletagmanager.com; connect-src 'self' https://nkbwfnhxssbxrbiolyhv.supabase.co https://script.google.com https://script.googleusercontent.com https://api.emailjs.com https://api.cloudinary.com https://*.google-analytics.com https://*.analytics.google.com https://*.googletagmanager.com; media-src 'self' blob:; frame-ancestors 'self'; base-uri 'self'; object-src 'none'; form-action 'self'
+
+/assets/*
+  Cache-Control: public, max-age=604800
+
+/favicon.ico
+  Cache-Control: public, max-age=604800
+
+/robots.txt
+  Cache-Control: public, max-age=3600
+
+/sitemap.xml
+  Cache-Control: public, max-age=3600

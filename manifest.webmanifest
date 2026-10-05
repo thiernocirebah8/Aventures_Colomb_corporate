@@ -1,0 +1,16 @@
+{
+  "name": "Aventures Colomb Corporate",
+  "short_name": "Aventures Colomb",
+  "description": "Sorties, excursions d'entreprise et billetterie d'événements à Conakry, Guinée.",
+  "lang": "fr",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#FBF7EE",
+  "theme_color": "#FBF7EE",
+  "icons": [
+    { "src": "/assets/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/assets/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/assets/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

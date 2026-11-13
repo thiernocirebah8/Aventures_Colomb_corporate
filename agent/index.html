@@ -1,0 +1,846 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f1513">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Agent AC">
+<meta name="robots" content="noindex, nofollow">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
+<title>Aventures Colomb — Espace Agent</title>
+<style>
+  :root{
+    --bg:#0f1513; --card:#19221f; --card2:#222d29; --line:rgba(255,255,255,.10);
+    --ink:#f3efe4; --mut:#9fada6; --gold:#dda13a;
+    --ok:#1f9d55; --err:#c9302c; --warn:#e8890c;
+    --safe-t:env(safe-area-inset-top,0px); --safe-b:env(safe-area-inset-bottom,0px);
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Inter,Helvetica,Arial,sans-serif;}
+  body{min-height:100vh;min-height:100dvh;padding-top:var(--safe-t);padding-bottom:var(--safe-b);}
+  button{font:inherit;cursor:pointer;border:0;color:inherit;}
+  input,select{font:inherit;color:var(--ink);}
+  .mono{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;}
+  .hidden{display:none !important;}
+
+  /* ---------- Connexion ---------- */
+  #login{min-height:100dvh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:28px 22px;text-align:center;}
+  .mark{width:58px;height:58px;border-radius:50%;background:var(--gold);color:#1c2321;font-weight:800;font-size:22px;display:flex;align-items:center;justify-content:center;margin-bottom:14px;}
+  #login h1{margin:0;font-size:24px;}
+  #login p.sub{margin:6px 0 22px;color:var(--mut);font-size:14px;}
+  .f{width:100%;max-width:340px;text-align:left;margin-bottom:14px;}
+  .f label{display:block;font-size:12.5px;color:var(--mut);margin-bottom:6px;}
+  .f input,.f select{width:100%;padding:15px 16px;border-radius:12px;border:1px solid var(--line);background:var(--card2);font-size:16px;}
+  .f input:focus,.f select:focus{outline:2px solid var(--gold);}
+  .btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;max-width:340px;min-height:54px;padding:0 18px;border-radius:14px;font-weight:700;font-size:16px;background:var(--gold);color:#1c2321;}
+  .btn:disabled{opacity:.5;cursor:not-allowed;}
+  .btn.ghost{background:var(--card2);color:var(--ink);border:1px solid var(--line);}
+  .err{max-width:340px;margin-top:14px;padding:11px 14px;border-radius:10px;background:rgba(201,48,44,.16);border:1px solid rgba(201,48,44,.45);color:#f2a29f;font-size:13.5px;}
+
+  /* ---------- Application ---------- */
+  #app{display:flex;flex-direction:column;min-height:100dvh;max-width:720px;margin:0 auto;}
+  .top{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 16px;}
+  .who{min-width:0;}
+  .who b{display:block;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .who span{font-size:12px;color:var(--mut);}
+  .top-actions{display:flex;gap:8px;}
+  .icon-btn{width:44px;height:44px;border-radius:12px;background:var(--card);border:1px solid var(--line);font-size:18px;}
+  .pill{display:inline-flex;align-items:center;gap:7px;padding:7px 12px;border-radius:999px;font-size:12px;font-weight:800;letter-spacing:.03em;}
+  .pill.online{background:rgba(31,157,85,.18);color:#5fd68f;}
+  .pill.weak{background:rgba(232,137,12,.2);color:#ffb24d;}
+  .pill.offline{background:rgba(201,48,44,.2);color:#ff8a86;}
+  .syncline{margin:0 16px;padding:10px 14px;border-radius:12px;background:var(--card);border:1px solid var(--line);font-size:13px;color:var(--mut);display:flex;flex-direction:column;gap:3px;}
+  .syncline b{color:var(--ink);font-weight:600;}
+  .syncline.pending{border-color:rgba(232,137,12,.55);}
+  .syncline.pending b{color:#ffb24d;}
+  .conflict{margin:10px 16px 0;padding:10px 14px;border-radius:12px;background:rgba(232,137,12,.16);border:1px solid rgba(232,137,12,.5);color:#ffcf8a;font-size:13px;}
+
+  .section{padding:14px 16px;}
+  .evsel{width:100%;padding:14px 16px;border-radius:12px;border:1px solid var(--line);background:var(--card);font-size:16px;font-weight:600;}
+  .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:12px;}
+  .stat{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 8px;text-align:center;}
+  .stat b{display:block;font-size:26px;font-variant-numeric:tabular-nums;}
+  .stat span{font-size:11.5px;color:var(--mut);}
+  .stat.ok b{color:#5fd68f;} .stat.no b{color:#ff8a86;}
+  .evline{margin-top:10px;font-size:13px;color:var(--mut);text-align:center;}
+
+  .scanbtn{min-height:84px;font-size:20px;border-radius:18px;max-width:none;}
+  .or{text-align:center;color:var(--mut);font-size:13px;margin:14px 0;}
+  .manual{display:flex;gap:8px;}
+  .manual input{flex:1;min-width:0;padding:16px;border-radius:14px;border:1px solid var(--line);background:var(--card);font-size:20px;letter-spacing:.14em;text-transform:uppercase;text-align:center;}
+  .manual input:focus{outline:2px solid var(--gold);}
+  .manual button{padding:0 22px;border-radius:14px;background:var(--ink);color:#0f1513;font-weight:800;font-size:15px;}
+  .scanner-tip{margin-top:10px;font-size:12px;color:var(--mut);text-align:center;}
+
+  #camwrap{position:relative;border-radius:18px;overflow:hidden;background:#000;margin-top:12px;aspect-ratio:3/4;max-height:60vh;}
+  #cam{width:100%;height:100%;object-fit:cover;}
+  #camwrap .frame{position:absolute;inset:18% 14%;border:3px solid rgba(255,255,255,.85);border-radius:20px;box-shadow:0 0 0 999px rgba(0,0,0,.35);pointer-events:none;}
+  #camwrap button{position:absolute;top:10px;right:10px;width:44px;height:44px;border-radius:50%;background:rgba(0,0,0,.6);font-size:18px;}
+
+  .hist h3{margin:4px 0 8px;font-size:14px;color:var(--mut);font-weight:600;}
+  .row{display:flex;align-items:center;gap:10px;padding:11px 12px;border-radius:12px;background:var(--card);border:1px solid var(--line);margin-bottom:6px;font-size:14px;}
+  .row .t{font-variant-numeric:tabular-nums;color:var(--mut);font-size:13px;}
+  .row .l{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .row .r{font-weight:800;font-size:12px;white-space:nowrap;}
+  .row .r.ok{color:#5fd68f;} .row .r.no{color:#ff8a86;} .row .r.wn{color:#ffb24d;}
+  .empty{color:var(--mut);font-size:13px;text-align:center;padding:12px;}
+
+  /* ---------- Résultat plein écran ---------- */
+  #result{position:fixed;inset:0;z-index:50;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px;color:#fff;}
+  #result.ok{background:var(--ok);} #result.no{background:var(--err);} #result.wn{background:var(--warn);}
+  #result .ico{font-size:clamp(70px,22vw,130px);line-height:1;}
+  #result h2{margin:14px 0 4px;font-size:clamp(32px,10vw,64px);line-height:1.05;font-weight:900;letter-spacing:.01em;}
+  #result h3{margin:0 0 18px;font-size:clamp(20px,6vw,34px);font-weight:700;opacity:.95;}
+  #result .info{background:rgba(0,0,0,.22);border-radius:16px;padding:14px 18px;min-width:min(86vw,420px);font-size:18px;line-height:1.5;}
+  #result .info b{font-weight:800;}
+  #result .tag{margin-top:14px;font-size:13px;opacity:.9;background:rgba(0,0,0,.25);padding:6px 12px;border-radius:999px;}
+  #result .tap{position:absolute;bottom:calc(18px + var(--safe-b));font-size:12px;opacity:.75;}
+
+  /* ---------- Paramètres ---------- */
+  #settings{position:fixed;inset:0;z-index:40;background:rgba(0,0,0,.6);display:flex;align-items:flex-end;}
+  #settings .sheet{width:100%;max-width:720px;margin:0 auto;background:var(--card);border-radius:22px 22px 0 0;padding:20px 18px calc(24px + var(--safe-b));}
+  .tg{display:flex;align-items:center;justify-content:space-between;padding:14px 4px;border-bottom:1px solid var(--line);font-size:16px;}
+  .sw{width:52px;height:30px;border-radius:99px;background:#44524c;position:relative;transition:.15s;}
+  .sw::after{content:"";position:absolute;top:3px;left:3px;width:24px;height:24px;border-radius:50%;background:#fff;transition:.15s;}
+  .sw.on{background:var(--ok);} .sw.on::after{left:25px;}
+  .toast{position:fixed;left:50%;bottom:calc(24px + var(--safe-b));transform:translateX(-50%);z-index:60;background:#000c;color:#fff;padding:11px 18px;border-radius:999px;font-size:14px;max-width:90vw;text-align:center;}
+  #loading{position:fixed;inset:0;z-index:45;background:rgba(15,21,19,.94);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;text-align:center;padding:24px;}
+  .spin{width:44px;height:44px;border-radius:50%;border:4px solid var(--line);border-top-color:var(--gold);animation:sp 1s linear infinite;}
+  @keyframes sp{to{transform:rotate(360deg);}}
+</style>
+</head>
+<body>
+
+<!-- ============ CONNEXION ============ -->
+<div id="login">
+  <div class="mark">AC</div>
+  <h1>Espace Agent</h1>
+  <p class="sub">Aventures Colomb — contrôle des entrées</p>
+  <div class="f"><label for="lg-id">Identifiant agent</label><input id="lg-id" type="text" autocapitalize="none" autocomplete="username" autocorrect="off" spellcheck="false" placeholder="ex : agent01"></div>
+  <div class="f"><label for="lg-pw">Mot de passe</label><input id="lg-pw" type="password" autocomplete="current-password" placeholder="••••••••"></div>
+  <button class="btn" id="lg-btn">Se connecter</button>
+  <div class="err hidden" id="lg-err"></div>
+  <p class="sub" style="margin-top:22px;font-size:12px;">Connexion Internet requise. Le contrôle hors ligne (plan B) n'existe que si l'administrateur l'a activé pour l'événement.</p>
+</div>
+
+<!-- ============ APPLICATION ============ -->
+<div id="app" class="hidden">
+  <div class="top">
+    <div class="who"><b id="ag-name">—</b><span id="ag-sub">Agent de contrôle</span></div>
+    <div class="top-actions">
+      <span class="pill online" id="net-pill">🟢 EN LIGNE</span>
+      <button class="icon-btn" id="btn-settings" aria-label="Réglages">⚙️</button>
+    </div>
+  </div>
+
+  <div class="syncline" id="syncline"></div>
+  <div class="conflict hidden" id="conflict"></div>
+
+  <div class="section">
+    <select class="evsel" id="ev-sel" aria-label="Événement"></select>
+    <div class="stats">
+      <div class="stat"><b id="st-total">0</b><span>Contrôlés</span></div>
+      <div class="stat ok"><b id="st-ok">0</b><span>Valides</span></div>
+      <div class="stat no"><b id="st-no">0</b><span>Refusés</span></div>
+    </div>
+    <div class="evline" id="ev-line"></div>
+  </div>
+
+  <div class="section" style="padding-top:0;">
+    <button class="btn scanbtn" id="btn-cam">📷 SCANNER LE BILLET</button>
+    <div id="camwrap" class="hidden">
+      <video id="cam" playsinline muted></video>
+      <div class="frame"></div>
+      <button id="btn-cam-close" aria-label="Fermer la caméra">✕</button>
+    </div>
+    <div class="or">OU</div>
+    <div class="manual">
+      <input id="manual" type="text" inputmode="text" autocapitalize="characters" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="Entrer le code du billet" maxlength="12">
+      <button id="btn-manual">VALIDER</button>
+    </div>
+    <div class="scanner-tip">Scanner NETUM (Bluetooth/USB) : scanne simplement, le code est lu automatiquement.</div>
+  </div>
+
+  <div class="section hist">
+    <h3>Derniers scans</h3>
+    <div id="hist"></div>
+  </div>
+</div>
+
+<!-- ============ RÉSULTAT ============ -->
+<div id="result" class="hidden"></div>
+
+<!-- ============ RÉGLAGES ============ -->
+<div id="settings" class="hidden">
+  <div class="sheet">
+    <h3 style="margin:0 0 6px;font-size:18px;">Réglages</h3>
+    <div class="tg" id="tg-sound"><span>🔊 Sons</span><div class="sw"></div></div>
+    <div class="tg" id="tg-vib"><span>📳 Vibrations</span><div class="sw"></div></div>
+    <div style="display:flex;flex-direction:column;gap:10px;margin-top:16px;">
+      <button class="btn ghost" id="btn-refresh" style="max-width:none;">⬇ Mettre à jour la liste hors ligne</button>
+      <button class="btn ghost hidden" id="btn-install" style="max-width:none;">📲 Installer sur l'écran d'accueil</button>
+      <button class="btn ghost" id="btn-logout" style="max-width:none;">Se déconnecter</button>
+      <button class="btn ghost" id="btn-close-settings" style="max-width:none;">Fermer</button>
+    </div>
+    <p class="scanner-tip" id="ios-tip" style="display:none;">Sur iPhone/iPad : touche « Partager » puis « Sur l'écran d'accueil ».</p>
+  </div>
+</div>
+
+<div id="loading" class="hidden"><div class="spin"></div><div id="loading-txt">Chargement…</div></div>
+
+<script src="jsqr.min.js"></script>
+<script>
+'use strict';
+/* =====================================================================
+   ESPACE AGENT — Aventures Colomb
+   Application web installable (PWA), connectée à Supabase, "offline-first" :
+   - les billets de l'événement sont téléchargés AVANT (empreintes seulement),
+   - chaque contrôle se fait en ligne (serveur = référence) ou, si la connexion
+     est faible/absente, en local ; les scans hors ligne sont mémorisés puis
+     synchronisés automatiquement, sans doublon (identifiant unique par scan).
+   La clé ci-dessous est la clé PUBLIQUE : aucune clé secrète dans cette page.
+   ===================================================================== */
+const SUPABASE_URL = 'https://nkbwfnhxssbxrbiolyhv.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_nWrZ1LA8jeFF4PXNjtQbOg_RqUONkVD';
+
+const $ = id => document.getElementById(id);
+const store = {
+  get(k, d){ try{ const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; }catch(e){ return d; } },
+  set(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} },
+  del(k){ try{ localStorage.removeItem(k); }catch(e){} }
+};
+const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : 'id' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10));
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const hhmm = d => new Date(d).toLocaleTimeString('fr-FR', { hour:'2-digit', minute:'2-digit' });
+const fmtN = n => Number(n || 0).toLocaleString('fr-FR');
+
+const deviceId = (() => { let d = localStorage.getItem('ac-agent-device'); if(!d){ d = uuid(); localStorage.setItem('ac-agent-device', d); } return d; })();
+let session = store.get('ac-agent-session', null);   // { token, nom, login, events, eventId }
+let settings = store.get('ac-agent-settings', { sound:true, vibrate:true });
+let stats = { valid:0, refused:0, sold:0, controlled:0 };
+let pendingN = 0;
+let offlineCount = 0;
+let lastPullAt = null;
+
+async function sha256hex(s){
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
+  return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+/* ---------------- Stockage local (IndexedDB) ---------------- */
+const DB = (() => {
+  let dbp = null;
+  const open = () => dbp || (dbp = new Promise((res, rej) => {
+    const r = indexedDB.open('ac-agent', 1);
+    r.onupgradeneeded = () => {
+      const d = r.result;
+      const t = d.createObjectStore('tickets', { keyPath:'k' });
+      t.createIndex('ev', 'ev'); t.createIndex('h', 'h'); t.createIndex('c', 'c'); t.createIndex('kc', 'kc');
+      d.createObjectStore('queue', { keyPath:'id' });
+      d.createObjectStore('meta', { keyPath:'k' });
+    };
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error);
+  }));
+  const req = r => new Promise((res, rej) => { r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
+  return {
+    async putMany(store_, items){
+      const d = await open();
+      return new Promise((res, rej) => {
+        const t = d.transaction([store_], 'readwrite');
+        const s = t.objectStore(store_);
+        items.forEach(i => s.put(i));
+        t.oncomplete = () => res(); t.onerror = () => rej(t.error); t.onabort = () => rej(t.error);
+      });
+    },
+    async get(store_, key){ const d = await open(); return req(d.transaction(store_).objectStore(store_).get(key)); },
+    async getAll(store_){ const d = await open(); return req(d.transaction(store_).objectStore(store_).getAll()); },
+    async del(store_, key){ const d = await open(); return new Promise((res, rej) => { const t = d.transaction([store_], 'readwrite'); t.objectStore(store_).delete(key); t.oncomplete = () => res(); t.onerror = () => rej(t.error); }); },
+    async byIndex(store_, idx, key){ const d = await open(); return req(d.transaction(store_).objectStore(store_).index(idx).getAll(key)); },
+    async countIndex(store_, idx, key){ const d = await open(); return req(d.transaction(store_).objectStore(store_).index(idx).count(key)); },
+    async count(store_){ const d = await open(); return req(d.transaction(store_).objectStore(store_).count()); },
+    async clearEvent(ev){
+      const d = await open();
+      return new Promise((res, rej) => {
+        const t = d.transaction(['tickets'], 'readwrite');
+        const idx = t.objectStore('tickets').index('ev');
+        const c = idx.openKeyCursor(IDBKeyRange.only(ev));
+        c.onsuccess = () => { const cur = c.result; if(cur){ t.objectStore('tickets').delete(cur.primaryKey); cur.continue(); } };
+        t.oncomplete = () => res(); t.onerror = () => rej(t.error);
+      });
+    }
+  };
+})();
+
+/* ---------------- Réseau ---------------- */
+const net = { state:'online', rtt:null, lastOk:Date.now(), lastFail:0, lastSync:store.get('ac-agent-lastsync', null) };
+function markOk(rtt){ net.lastOk = Date.now(); if(rtt != null) net.rtt = rtt; refreshNet(); }
+function markFail(){ net.lastFail = Date.now(); refreshNet(); }
+function refreshNet(){
+  let st = 'online';
+  if(!navigator.onLine || net.lastFail > net.lastOk) st = 'offline';
+  else if(net.rtt != null && net.rtt > 1500) st = 'weak';
+  net.state = st;
+  renderStatus();
+}
+async function rpc(name, args, timeout){
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeout || 8000);
+  const t0 = performance.now();
+  try{
+    const res = await fetch(SUPABASE_URL + '/rest/v1/rpc/' + name, {
+      method:'POST',
+      headers:{ apikey:SUPABASE_KEY, Authorization:'Bearer ' + SUPABASE_KEY, 'Content-Type':'application/json' },
+      body: JSON.stringify(args || {}), signal: ctrl.signal
+    });
+    if(!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    markOk(Math.round(performance.now() - t0));
+    return data;
+  }catch(e){
+    markFail();
+    throw e;
+  }finally{ clearTimeout(timer); }
+}
+
+/* ---------------- Sons / vibrations ---------------- */
+let actx = null;
+function unlockAudio(){ try{ if(!actx) actx = new (window.AudioContext || window.webkitAudioContext)(); if(actx.state === 'suspended') actx.resume(); }catch(e){} }
+function beep(freq, start, dur, type){
+  if(!actx) return;
+  const o = actx.createOscillator(), g = actx.createGain();
+  o.type = type || 'sine'; o.frequency.value = freq;
+  g.gain.setValueAtTime(0.0001, actx.currentTime + start);
+  g.gain.exponentialRampToValueAtTime(0.35, actx.currentTime + start + 0.02);
+  g.gain.exponentialRampToValueAtTime(0.0001, actx.currentTime + start + dur);
+  o.connect(g); g.connect(actx.destination);
+  o.start(actx.currentTime + start); o.stop(actx.currentTime + start + dur + 0.05);
+}
+function feedback(kind){
+  if(settings.sound){ unlockAudio(); if(kind === 'ok'){ beep(880, 0, .11); beep(1320, .12, .16); } else if(kind === 'no'){ beep(220, 0, .25, 'square'); beep(180, .3, .35, 'square'); } else { beep(520, 0, .2); } }
+  if(settings.vibrate && navigator.vibrate){ navigator.vibrate(kind === 'ok' ? 90 : kind === 'no' ? [220, 90, 220] : [120, 60, 120]); }
+}
+
+/* ---------------- Lecture du code saisi / scanné ---------------- */
+// Un scanner réglé sur un autre clavier (AZERTY) peut écrire des symboles à la place des chiffres : on corrige.
+function repairAzerty(s){
+  const m = { '&':'1', 'é':'2', '"':'3', "'":'4', '(':'5', '-':'6', 'è':'7', '_':'8', 'ç':'9', 'à':'0' };
+  return s.replace(/[&é"'(\-è_çà]/g, c => m[c]).replace(/q/g, 'a').replace(/Q/g, 'A');
+}
+function parseInput(raw){
+  const s = String(raw == null ? '' : raw).replace(/[\u0000-\u001f\u007f]/g, '').trim();
+  if(!s) return null;
+  if(/^[A-Za-z0-9]{4,10}$/.test(s)) return { type:'code', value:s.toUpperCase() };
+  let m = s.match(/([0-9a-f]{32})$/i);
+  if(!m) m = repairAzerty(s).match(/([0-9a-f]{32})$/i);
+  if(m) return { type:'token', value:m[1].toLowerCase() };
+  return { type:'other', value:s.slice(0, 64) };
+}
+
+/* ---------------- Contrôle local (hors ligne) ---------------- */
+async function localCheck(ev, p){
+  if(p.type === 'other') return { result:'invalid' };
+  let rec = null;
+  if(p.type === 'token'){
+    const h = await sha256hex(p.value);
+    rec = await DB.get('tickets', ev + '|' + h);
+    if(!rec){
+      const others = await DB.byIndex('tickets', 'h', h);
+      return others.length ? { result:'wrong_event' } : { result:'invalid', unknown:true };
+    }
+  } else {
+    const c = await sha256hex(p.value);
+    const list = await DB.byIndex('tickets', 'kc', ev + '|' + c);
+    if(list.length === 1) rec = list[0];
+    else if(list.length > 1) return { result:'invalid' };
+    else {
+      const others = await DB.byIndex('tickets', 'c', c);
+      return others.length === 1 ? { result:'wrong_event' } : { result:'invalid', unknown:true };
+    }
+  }
+  if(rec.s === 'pending') return { result:'pending_payment', rec };
+  if(rec.s !== 'ok') return { result:'cancelled', rec };
+  if(rec.u) return { result:'duplicate', rec };
+  return { result:'valid', rec };
+}
+function currentEvent(){ return session && (session.events || []).find(e => e.id === session.eventId); }
+// Le mode hors ligne est un plan B : il n'existe que si l'administrateur l'a activé pour cet événement.
+function offlineOn(){ const e = currentEvent(); return !!(e && e.offline); }
+async function disableOffline(ev){
+  const e = (session.events || []).find(x => x.id === ev);
+  if(e){ e.offline = false; store.set('ac-agent-session', session); }
+  await DB.clearEvent(ev); await DB.del('meta', 'since:' + ev);
+  if(session && session.eventId === ev){ offlineCount = 0; lastPullAt = null; }
+}
+
+/* ---------------- Traitement d'un scan ---------------- */
+let chain = Promise.resolve();
+const recent = {};
+function handleInput(raw, method, source){
+  const p = parseInput(raw);
+  if(!p) return;
+  if(source !== 'manual'){                       // anti-répétition (caméra qui relit le même QR)
+    const key = p.type + ':' + p.value, now = Date.now();
+    if(recent[key] && now - recent[key] < 2500) return;
+    recent[key] = now;
+  }
+  chain = chain.then(() => processScan(p, method)).catch(e => console.error(e));
+}
+
+async function processScan(p, method){
+  if(!session) return;
+  const ev = session.eventId;
+  if(!ev){ toast('Choisis d’abord un événement'); return; }
+  const scanId = uuid(), scannedAt = new Date().toISOString();
+  const serverInput = p.type === 'token' ? 'ACT:' + p.value : p.value;
+  let res = null, mode = 'online';
+
+  // 1) En ligne : le serveur fait foi (aucun double passage possible entre agents connectés)
+  if(net.state !== 'offline'){
+    try{
+      const r = await rpc('agent_scan', {
+        p_token: session.token, p_event_id: ev, p_input: serverInput, p_method: method,
+        p_device_id: deviceId, p_client_scan_id: scanId, p_scanned_at: scannedAt, p_mode: 'online'
+      }, net.state === 'weak' ? 2500 : 4500);
+      if(r.ok) res = r;
+      else if(r.error === 'session'){ sessionExpired(); return; }
+      else if(r.error === 'event'){ showResult({ result:'event_denied' }, 'online'); return; }
+    }catch(e){ /* repli local ci-dessous */ }
+  }
+
+  // 2) Hors ligne ou connexion trop faible : vérification locale + mise en file d'attente
+  if(!res){
+    if(!offlineOn()){ showResult({ result:'net_down' }, 'online'); renderAll(); return; }
+    mode = 'offline';
+    const lc = await localCheck(ev, p);
+    const rec = lc.rec;
+    res = {
+      ok:true, result: lc.result, unknown: !!lc.unknown, evenement: (currentEvent() || {}).name,
+      nom: rec ? rec.n : null, type: rec ? rec.t : null, quantite: rec ? rec.q : null,
+      first_scan_at: rec ? rec.ua : null, first_agent: rec ? rec.ub : null
+    };
+    await DB.putMany('queue', [{ id:scanId, ev, input:serverInput, method, scanned_at:scannedAt, mode:'offline', local_result:lc.result }]);
+    pendingN++;
+    if(lc.result === 'valid'){ rec.u = true; rec.ua = scannedAt; rec.ub = session.nom; await DB.putMany('tickets', [rec]); }
+  } else if(res.result === 'valid' || res.result === 'duplicate'){
+    // garde la copie locale à jour
+    if(p.type === 'token'){
+      const rec = await DB.get('tickets', ev + '|' + await sha256hex(p.value));
+      if(rec && !rec.u){ rec.u = true; rec.ua = res.first_scan_at || scannedAt; rec.ub = res.first_agent || session.nom; await DB.putMany('tickets', [rec]); }
+    }
+  }
+
+  // 3) Compteurs + historique
+  if(res.result === 'valid'){ stats.valid++; stats.controlled += Number(res.quantite || 1); } else { stats.refused++; }
+  saveStats();
+  addHistory({ id:scanId, t:scannedAt, label: res.nom || ('…' + String(p.value).slice(-7)), result: res.result, mode });
+  showResult(res, mode);
+  renderAll();
+}
+
+/* ---------------- Résultat plein écran ---------------- */
+let resultTimer = null;
+function showResult(r, mode){
+  const cfg = {
+    valid:           { cls:'ok', ico:'✅', t:'BILLET VALIDE', s:'ACCÈS AUTORISÉ', fb:'ok' },
+    duplicate:       { cls:'no', ico:'⛔', t:'ACCÈS REFUSÉ', s:'BILLET DÉJÀ UTILISÉ', fb:'no' },
+    invalid:         { cls:'no', ico:'⛔', t:'BILLET INVALIDE', s: r.unknown ? 'Introuvable dans la liste hors ligne' : 'ACCÈS REFUSÉ', fb:'no' },
+    wrong_event:     { cls:'no', ico:'⛔', t:'MAUVAIS ÉVÉNEMENT', s:'ACCÈS REFUSÉ', fb:'no' },
+    cancelled:       { cls:'no', ico:'⛔', t:'BILLET ANNULÉ', s:'ACCÈS REFUSÉ', fb:'no' },
+    pending_payment: { cls:'wn', ico:'⚠️', t:'PAIEMENT NON CONFIRMÉ', s:'ACCÈS REFUSÉ', fb:'wn' },
+    event_denied:    { cls:'wn', ico:'⚠️', t:'ÉVÉNEMENT NON AUTORISÉ', s:'Contacte l’administrateur', fb:'wn' },
+    net_down:        { cls:'wn', ico:'📡', t:'CONNEXION INDISPONIBLE', s:'Contrôle impossible — réessaie', fb:'wn' }
+  }[r.result] || { cls:'wn', ico:'⚠️', t:'RÉSULTAT INCONNU', s:'', fb:'wn' };
+
+  const lines = [];
+  if(r.nom) lines.push('<div><b>' + esc(r.nom) + '</b></div>');
+  if(r.type) lines.push('<div>' + esc(r.type) + (r.quantite > 1 ? ' · ' + r.quantite + ' personnes' : '') + '</div>');
+  if(r.result === 'valid' && r.evenement) lines.push('<div>' + esc(r.evenement) + '</div>');
+  if(r.result === 'valid') lines.push('<div>Contrôlé à <b>' + hhmm(Date.now()) + '</b></div>');
+  if(r.result === 'net_down') lines.push('<div>Le mode hors ligne n’est pas activé pour cet événement.</div>');
+  if(r.result === 'duplicate' && r.first_scan_at) lines.push('<div>Premier scan : <b>' + hhmm(r.first_scan_at) + '</b>' + (r.first_agent ? ' · ' + esc(r.first_agent) : '') + '</div>');
+  const el = $('result');
+  el.className = cfg.cls;
+  el.innerHTML =
+    '<div class="ico">' + cfg.ico + '</div><h2>' + cfg.t + '</h2><h3>' + cfg.s + '</h3>' +
+    (lines.length ? '<div class="info">' + lines.join('') + '</div>' : '') +
+    (mode === 'offline' && r.result !== 'event_denied' ? '<div class="tag">Contrôle hors ligne — synchronisation automatique</div>' : '') +
+    '<div class="tap">Touche l’écran pour continuer</div>';
+  el.classList.remove('hidden');
+  feedback(cfg.fb);
+  clearTimeout(resultTimer);
+  resultTimer = setTimeout(hideResult, cfg.cls === 'ok' ? 1500 : 3200);
+}
+function hideResult(){ clearTimeout(resultTimer); $('result').classList.add('hidden'); }
+$('result').addEventListener('click', hideResult);
+
+/* ---------------- Historique et compteurs ---------------- */
+const histKey = () => 'ac-agent-hist-' + (session ? session.eventId : '');
+const statsKey = () => 'ac-agent-stats-' + (session ? session.eventId : '');
+function addHistory(h){ const l = store.get(histKey(), []); l.unshift(h); store.set(histKey(), l.slice(0, 40)); }
+function flagConflict(id){ const l = store.get(histKey(), []); const it = l.find(x => x.id === id); if(it){ it.conflict = true; store.set(histKey(), l); } }
+function saveStats(){ store.set(statsKey(), stats); }
+function loadStats(){ stats = Object.assign({ valid:0, refused:0, sold:0, controlled:0 }, store.get(statsKey(), {})); }
+
+/* ---------------- Affichage ---------------- */
+const RES = {
+  valid:['VALIDE','ok'], duplicate:['DÉJÀ UTILISÉ','no'], invalid:['INVALIDE','no'], wrong_event:['MAUVAIS ÉVÉNEMENT','no'],
+  cancelled:['ANNULÉ','no'], pending_payment:['NON PAYÉ','wn']
+};
+function renderStatus(){
+  const pill = $('net-pill');
+  if(!pill) return;
+  const map = { online:['🟢 EN LIGNE','online'], weak:['🟠 CONNEXION FAIBLE','weak'], offline:['🔴 HORS LIGNE','offline'] }[net.state];
+  pill.textContent = map[0]; pill.className = 'pill ' + map[1];
+  const sl = $('syncline');
+  let html;
+  if(pendingN > 0){
+    sl.className = 'syncline pending';
+    html = '<div>🟠 <b>' + pendingN + ' scan' + (pendingN > 1 ? 's' : '') + ' en attente de synchronisation</b></div>' +
+           '<div>' + (net.state === 'offline' ? 'Ils seront envoyés dès le retour d’Internet.' : 'Envoi en cours…') + '</div>';
+  } else {
+    sl.className = 'syncline';
+    html = net.state === 'offline'
+      ? '<div>🔴 <b>Hors ligne</b>' + (offlineOn() ? ' — le contrôle local reste actif' : ' — contrôle impossible tant que la connexion n’est pas revenue') + '</div>'
+      : '<div>🟢 <b>Synchronisé</b>' + (net.lastSync ? ' · Dernière synchronisation : ' + hhmm(net.lastSync) : '') + '</div>';
+  }
+  html += offlineOn()
+    ? '<div>Mode hors ligne (plan B) : <b>activé</b> · liste de ' + fmtN(offlineCount) + ' billet' + (offlineCount > 1 ? 's' : '') + (lastPullAt ? ' · mise à jour ' + hhmm(lastPullAt) : '') + '</div>'
+    : '<div>Mode hors ligne : <b>désactivé</b> — contrôle en ligne uniquement</div>';
+  sl.innerHTML = html;
+}
+function renderAll(){
+  if(!session) return;
+  $('ag-name').textContent = session.nom;
+  $('btn-refresh').classList.toggle('hidden', !offlineOn());
+  $('st-total').textContent = fmtN(stats.valid + stats.refused);
+  $('st-ok').textContent = fmtN(stats.valid);
+  $('st-no').textContent = fmtN(stats.refused);
+  $('ev-line').textContent = stats.sold ? 'Entrées de l’événement : ' + fmtN(stats.controlled) + ' / ' + fmtN(stats.sold) : '';
+  const hist = store.get(histKey(), []);
+  $('hist').innerHTML = hist.length ? hist.slice(0, 15).map(h => {
+    const m = RES[h.result] || ['?', 'wn'];
+    return '<div class="row"><span class="t">' + hhmm(h.t) + '</span><span class="l">' + esc(h.label) + (h.mode === 'offline' ? ' <small style="color:var(--mut)">(hors ligne)</small>' : '') + '</span>' +
+           '<span class="r ' + m[1] + '">' + (h.result === 'valid' ? '🟢 ' : m[1] === 'no' ? '🔴 ' : '🟠 ') + m[0] + (h.conflict ? ' ⚠️' : '') + '</span></div>';
+  }).join('') : '<div class="empty">Aucun contrôle pour le moment.</div>';
+  renderStatus();
+}
+function toast(msg){
+  const t = document.createElement('div'); t.className = 'toast'; t.textContent = msg; document.body.appendChild(t);
+  setTimeout(() => t.remove(), 3200);
+}
+function loading(on, txt){ $('loading').classList.toggle('hidden', !on); if(txt) $('loading-txt').textContent = txt; }
+
+/* ---------------- Téléchargement et synchronisation ---------------- */
+async function refreshStats(){
+  if(!session || !session.eventId || net.state === 'offline') return;
+  try{
+    const r = await rpc('agent_stats', { p_token: session.token, p_event_id: session.eventId }, 6000);
+    if(r.ok){ stats.valid = r.valid_by_me; stats.refused = r.refused_by_me; stats.sold = r.sold; stats.controlled = r.controlled; saveStats(); renderAll(); }
+  }catch(e){}
+}
+async function refreshOfflineCount(){ offlineCount = session ? await DB.countIndex('tickets', 'ev', session.eventId) : 0; }
+async function reapplyQueue(ev){
+  const q = await DB.getAll('queue');
+  for(const it of q){
+    if(it.ev !== ev || it.local_result !== 'valid') continue;
+    const m = it.input.match(/([0-9a-f]{32})$/i);
+    if(!m) continue;
+    const rec = await DB.get('tickets', ev + '|' + await sha256hex(m[1].toLowerCase()));
+    if(rec && !rec.u){ rec.u = true; rec.ua = it.scanned_at; rec.ub = session.nom; await DB.putMany('tickets', [rec]); }
+  }
+}
+async function pullEvent(ev, full){
+  const meta = await DB.get('meta', 'since:' + ev);
+  const useFull = full || !meta;
+  const r = await rpc('agent_pull', { p_token: session.token, p_event_id: ev, p_since: useFull ? null : meta.v }, 90000);
+  if(!r.ok){
+    if(r.error === 'session') sessionExpired();
+    else if(r.error === 'offline_disabled') await disableOffline(ev);
+    return false;
+  }
+  const items = (r.tickets || []).map(t => ({
+    k: ev + '|' + t.h, ev, h: t.h, c: t.c || null, kc: t.c ? ev + '|' + t.c : null,
+    n: t.n, t: t.t, q: t.q, s: t.s, u: !!t.u, ua: t.ua, ub: t.ub
+  }));
+  if(useFull) await DB.clearEvent(ev);
+  for(let i = 0; i < items.length; i += 1000) await DB.putMany('tickets', items.slice(i, i + 1000));
+  await reapplyQueue(ev);
+  await DB.putMany('meta', [{ k:'since:' + ev, v: new Date(new Date(r.server_time).getTime() - 10000).toISOString() }]);
+  lastPullAt = Date.now(); store.set('ac-agent-pull-' + ev, lastPullAt);
+  if(r.stats){ stats.valid = r.stats.valid_by_me; stats.refused = r.stats.refused_by_me; stats.sold = r.stats.sold; stats.controlled = r.stats.controlled; saveStats(); }
+  await refreshOfflineCount();
+  return true;
+}
+let syncing = false;
+async function syncNow(){
+  if(syncing || !session || net.state === 'offline') return;
+  syncing = true;
+  try{
+    let q = await DB.getAll('queue');
+    q.sort((a, b) => a.scanned_at < b.scanned_at ? -1 : 1);
+    let conflicts = 0;
+    while(q.length){
+      const batch = q.splice(0, 200);
+      const r = await rpc('agent_sync_scans', {
+        p_token: session.token, p_device_id: deviceId,
+        p_scans: batch.map(x => ({ event_id:x.ev, input:x.input, method:x.method, client_scan_id:x.id, scanned_at:x.scanned_at, mode:x.mode, local_result:x.local_result }))
+      }, 30000);
+      if(!r.ok){ if(r.error === 'session') sessionExpired(); return; }
+      for(const it of (r.results || [])){
+        await DB.del('queue', it.client_scan_id);
+        if(it.conflict){ conflicts++; flagConflict(it.client_scan_id); }
+      }
+      pendingN = await DB.count('queue');
+      net.lastSync = Date.now(); store.set('ac-agent-lastsync', net.lastSync);
+      renderAll();
+    }
+    if(conflicts){
+      const c = $('conflict');
+      c.textContent = '⚠️ ' + conflicts + ' conflit' + (conflicts > 1 ? 's' : '') + ' détecté' + (conflicts > 1 ? 's' : '') + ' à la synchronisation (billet accepté hors ligne alors qu’un autre contrôle l’avait déjà validé, ou billet valide refusé faute de liste à jour). Voir les lignes marquées ⚠️.';
+      c.classList.remove('hidden');
+    }
+    pendingN = await DB.count('queue');
+    if(session.eventId){ if(offlineOn()) await pullEvent(session.eventId, false); else await refreshStats(); }
+    net.lastSync = Date.now(); store.set('ac-agent-lastsync', net.lastSync);
+  }catch(e){ /* on réessaiera */ }
+  finally{ syncing = false; renderAll(); }
+}
+
+/* ---------------- Signal de vie ---------------- */
+let pingTimer = null, lastDelta = 0;
+async function ping(){
+  clearTimeout(pingTimer);
+  if(!session) return;
+  try{
+    const r = await rpc('agent_ping', { p_token: session.token, p_device_id: deviceId, p_pending: pendingN, p_rtt: net.rtt }, 6000);
+    if(r && r.ok === false && r.error === 'session'){ sessionExpired(); return; }
+    if(pendingN > 0) syncNow();
+    else if(Date.now() - lastDelta > 60000 && session.eventId){ lastDelta = Date.now(); (offlineOn() ? pullEvent(session.eventId, false) : refreshStats()).then(renderAll).catch(() => {}); }
+  }catch(e){ /* l'état hors ligne est déjà marqué */ }
+  pingTimer = setTimeout(ping, net.state === 'offline' ? 8000 : 15000);
+}
+window.addEventListener('online', () => { refreshNet(); ping(); });
+window.addEventListener('offline', () => { net.lastFail = Date.now(); refreshNet(); });
+
+/* ---------------- Connexion / déconnexion ---------------- */
+function showLogin(msg){
+  $('app').classList.add('hidden'); $('login').classList.remove('hidden');
+  const e = $('lg-err'); if(msg){ e.textContent = msg; e.classList.remove('hidden'); } else e.classList.add('hidden');
+  stopCamera(); clearTimeout(pingTimer);
+}
+function sessionExpired(){
+  const keep = session && session.login;
+  session = null; store.del('ac-agent-session');
+  showLogin('Session expirée. Reconnecte-toi' + (pendingN > 0 ? ' — tes ' + pendingN + ' scans en attente seront envoyés ensuite.' : '.'));
+  if(keep) $('lg-id').value = keep;
+}
+async function doLogin(){
+  const login = $('lg-id').value.trim().toLowerCase(), pw = $('lg-pw').value;
+  const btn = $('lg-btn'), err = $('lg-err');
+  err.classList.add('hidden');
+  if(!login || !pw) return;
+  unlockAudio();
+  const owner = store.get('ac-agent-queue-owner', null);
+  pendingN = await DB.count('queue');
+  if(pendingN > 0 && owner && owner !== login){
+    err.textContent = 'Des scans de « ' + owner + ' » sont en attente sur cet appareil. Il doit se reconnecter pour les synchroniser.';
+    err.classList.remove('hidden'); return;
+  }
+  btn.disabled = true; btn.textContent = 'Connexion…';
+  try{
+    const r = await rpc('agent_login', { p_login: login, p_password: pw, p_device_id: deviceId, p_label: navigator.userAgent.slice(0, 100) }, 12000);
+    if(r.ok){
+      session = { token:r.token, nom:r.nom, login, events:r.events || [], eventId:null };
+      const last = store.get('ac-agent-last-event', null);
+      session.eventId = (session.events.find(e => e.id === last) || session.events[0] || {}).id || null;
+      store.set('ac-agent-session', session);
+      store.set('ac-agent-queue-owner', login);
+      $('lg-pw').value = '';
+      await enterApp();
+    } else { err.textContent = r.error || 'Connexion impossible.'; err.classList.remove('hidden'); }
+  }catch(e){
+    err.textContent = 'Connexion impossible. Vérifie ta connexion Internet.'; err.classList.remove('hidden');
+  }
+  btn.disabled = false; btn.textContent = 'Se connecter';
+}
+async function doLogout(){
+  pendingN = await DB.count('queue');
+  if(pendingN > 0){
+    if(net.state !== 'offline'){ await syncNow(); pendingN = await DB.count('queue'); }
+    if(pendingN > 0 && !confirm(pendingN + ' scan(s) ne sont pas encore synchronisés. Se déconnecter les supprimera définitivement. Continuer ?')) return;
+    if(pendingN > 0){ const q = await DB.getAll('queue'); for(const it of q) await DB.del('queue', it.id); pendingN = 0; }
+  }
+  try{ if(session) await rpc('agent_logout', { p_token: session.token }, 4000); }catch(e){}
+  session = null; store.del('ac-agent-session'); store.del('ac-agent-queue-owner');
+  $('settings').classList.add('hidden');
+  showLogin();
+}
+
+/* ---------------- Entrée dans l'application ---------------- */
+function fillEvents(){
+  const sel = $('ev-sel');
+  const evs = session.events || [];
+  if(!evs.length){ sel.innerHTML = '<option value="">Aucun événement affecté</option>'; return; }
+  sel.innerHTML = evs.map(e => '<option value="' + esc(e.id) + '"' + (e.id === session.eventId ? ' selected' : '') + '>' +
+    esc(e.name) + (e.date ? ' — ' + new Date(e.date + 'T00:00:00').toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit' }) : '') + '</option>').join('');
+}
+async function enterApp(){
+  $('login').classList.add('hidden'); $('app').classList.remove('hidden');
+  $('ag-sub').textContent = 'Agent de contrôle';
+  fillEvents();
+  pendingN = await DB.count('queue');
+  await selectEvent(session.eventId, false);
+  keepAwake();
+  ping();
+  refreshMe();
+  setInterval(refreshMe, 2 * 60 * 1000);
+}
+async function refreshMe(){
+  if(!session || net.state === 'offline') return;
+  try{
+    const r = await rpc('agent_me', { p_token: session.token }, 6000);
+    if(r.ok){
+      const before = {}; (session.events || []).forEach(e => { before[e.id] = !!e.offline; });
+      session.nom = r.nom; session.events = r.events;
+      if(!r.events.find(e => e.id === session.eventId)){ session.eventId = (r.events[0] || {}).id || null; await selectEvent(session.eventId, false); }
+      for(const e of r.events){ if(before[e.id] && !e.offline) await disableOffline(e.id); }   // désactivé par l'admin : on efface la liste locale
+      store.set('ac-agent-session', session); fillEvents(); renderAll();
+      const cur = currentEvent();
+      if(cur && cur.offline && !before[cur.id]) selectEvent(cur.id, true);                     // activé par l'admin : téléchargement
+    } else if(r.error === 'session') sessionExpired();
+  }catch(e){}
+}
+async function selectEvent(ev, forceFull){
+  session.eventId = ev; store.set('ac-agent-session', session);
+  if(ev) store.set('ac-agent-last-event', ev);
+  loadStats();
+  lastPullAt = ev ? store.get('ac-agent-pull-' + ev, null) : null;
+  await refreshOfflineCount();
+  renderAll();
+  if(!ev) return;
+  if(!offlineOn()){                                   // mode normal : tout se passe en ligne
+    if(offlineCount > 0) await disableOffline(ev);
+    await refreshStats(); renderAll(); return;
+  }
+  if(offlineCount === 0 || forceFull){
+    if(net.state === 'offline'){ toast('Aucune liste hors ligne : connecte-toi à Internet avant l’événement'); return; }
+    loading(true, 'Téléchargement des billets de l’événement…');
+    try{ const ok = await pullEvent(ev, true); if(ok) toast('Liste hors ligne prête : ' + fmtN(offlineCount) + ' billets'); }
+    catch(e){ toast('Téléchargement impossible, réessaie dans « Réglages »'); }
+    loading(false); renderAll();
+  } else if(net.state !== 'offline'){
+    syncNow().then(() => pullEvent(ev, false)).then(renderAll).catch(() => {});
+  }
+}
+$('ev-sel').addEventListener('change', e => selectEvent(e.target.value, false));
+
+/* ---------------- Caméra ---------------- */
+let cam = { stream:null, on:false, detector:null, timer:null };
+async function startCamera(){
+  unlockAudio();
+  try{
+    cam.stream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:{ ideal:'environment' }, width:{ ideal:1280 }, height:{ ideal:720 } }, audio:false });
+    const v = $('cam'); v.srcObject = cam.stream; await v.play();
+    $('camwrap').classList.remove('hidden'); $('btn-cam').classList.add('hidden');
+    cam.on = true;
+    if('BarcodeDetector' in window){ try{ cam.detector = new BarcodeDetector({ formats:['qr_code', 'code_128', 'code_39', 'ean_13'] }); }catch(e){ cam.detector = null; } }
+    tick();
+  }catch(e){
+    toast('Caméra indisponible : autorise l’accès, ou utilise le scanner / la saisie manuelle');
+  }
+}
+function stopCamera(){
+  cam.on = false; clearTimeout(cam.timer);
+  if(cam.stream){ cam.stream.getTracks().forEach(t => t.stop()); cam.stream = null; }
+  const w = $('camwrap'); if(w) w.classList.add('hidden');
+  const b = $('btn-cam'); if(b) b.classList.remove('hidden');
+}
+const canvas = document.createElement('canvas'), cctx = canvas.getContext('2d', { willReadFrequently:true });
+async function tick(){
+  if(!cam.on) return;
+  const v = $('cam');
+  try{
+    if(v.readyState >= 2){
+      let value = null;
+      if(cam.detector){
+        const codes = await cam.detector.detect(v);
+        if(codes.length) value = codes[0].rawValue;
+      } else if(window.jsQR){
+        const w = Math.min(640, v.videoWidth), h = Math.round(v.videoHeight * w / v.videoWidth);
+        canvas.width = w; canvas.height = h; cctx.drawImage(v, 0, 0, w, h);
+        const img = cctx.getImageData(0, 0, w, h);
+        const code = jsQR(img.data, w, h, { inversionAttempts:'dontInvert' });
+        if(code) value = code.data;
+      }
+      if(value) handleInput(value, 'qr', 'camera');
+    }
+  }catch(e){}
+  cam.timer = setTimeout(tick, 110);
+}
+$('btn-cam').addEventListener('click', startCamera);
+$('btn-cam-close').addEventListener('click', stopCamera);
+
+/* ---------------- Scanner physique (NETUM Bluetooth/USB) : le scanner « tape » le code ---------------- */
+let buf = '', lastKey = 0, idleTimer = null;
+function flushBuffer(){ const v = buf; buf = ''; clearTimeout(idleTimer); if(v.length >= 4) handleInput(v, 'qr', 'scanner'); }
+document.addEventListener('keydown', e => {
+  if(!session || $('app').classList.contains('hidden')) return;
+  const t = e.target;
+  if(t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) return;  // saisie manuelle : gérée à part
+  if(e.ctrlKey || e.metaKey || e.altKey) return;
+  const now = Date.now();
+  if(now - lastKey > 400) buf = '';
+  lastKey = now;
+  if(e.key === 'Enter'){ e.preventDefault(); flushBuffer(); return; }
+  if(e.key.length === 1){
+    buf += e.key; clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => { if(buf.length >= 8) flushBuffer(); }, 180);   // scanner sans touche « Entrée »
+  }
+});
+
+/* ---------------- Saisie manuelle ---------------- */
+function submitManual(){
+  const i = $('manual'); const v = i.value;
+  if(!v.trim()) return;
+  i.value = ''; handleInput(v, 'manual', 'manual'); i.blur();
+}
+$('btn-manual').addEventListener('click', submitManual);
+$('manual').addEventListener('keydown', e => { if(e.key === 'Enter'){ e.preventDefault(); submitManual(); } });
+
+/* ---------------- Réglages / installation / connexion ---------------- */
+function paintToggles(){ $('tg-sound').querySelector('.sw').classList.toggle('on', !!settings.sound); $('tg-vib').querySelector('.sw').classList.toggle('on', !!settings.vibrate); }
+$('btn-settings').addEventListener('click', () => { paintToggles(); $('settings').classList.remove('hidden'); });
+$('btn-close-settings').addEventListener('click', () => $('settings').classList.add('hidden'));
+$('settings').addEventListener('click', e => { if(e.target === $('settings')) $('settings').classList.add('hidden'); });
+$('tg-sound').addEventListener('click', () => { settings.sound = !settings.sound; store.set('ac-agent-settings', settings); paintToggles(); if(settings.sound){ unlockAudio(); feedback('ok'); } });
+$('tg-vib').addEventListener('click', () => { settings.vibrate = !settings.vibrate; store.set('ac-agent-settings', settings); paintToggles(); if(settings.vibrate && navigator.vibrate) navigator.vibrate(80); });
+$('btn-refresh').addEventListener('click', async () => { $('settings').classList.add('hidden'); if(session && session.eventId) await selectEvent(session.eventId, true); });
+$('btn-logout').addEventListener('click', doLogout);
+$('lg-btn').addEventListener('click', doLogin);
+$('lg-pw').addEventListener('keydown', e => { if(e.key === 'Enter') doLogin(); });
+$('lg-id').addEventListener('keydown', e => { if(e.key === 'Enter') $('lg-pw').focus(); });
+
+let installEvt = null;
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; $('btn-install').classList.remove('hidden'); });
+$('btn-install').addEventListener('click', async () => { if(!installEvt) return; installEvt.prompt(); await installEvt.userChoice; installEvt = null; $('btn-install').classList.add('hidden'); });
+if(/iphone|ipad|ipod/i.test(navigator.userAgent) && !window.navigator.standalone) $('ios-tip').style.display = 'block';
+
+/* ---------------- Écran toujours allumé pendant le contrôle ---------------- */
+let wake = null;
+async function keepAwake(){ try{ if('wakeLock' in navigator && !wake) { wake = await navigator.wakeLock.request('screen'); wake.addEventListener('release', () => { wake = null; }); } }catch(e){} }
+document.addEventListener('visibilitychange', () => { if(document.visibilityState === 'visible' && session){ keepAwake(); ping(); } });
+
+/* ---------------- Démarrage ---------------- */
+if('serviceWorker' in navigator){ navigator.serviceWorker.register('./sw.js', { scope:'./' }).catch(() => {}); }
+(async function init(){
+  refreshNet();
+  pendingN = await DB.count('queue').catch(() => 0);
+  if(session && session.token){ await enterApp(); } else { showLogin(); }
+})();
+</script>
+</body>
+</html>
